@@ -1,0 +1,8 @@
+build/
+build-tools/
+dist/
+pkgwork/
+/render
+*.wav
+__pycache__/
+.DS_Store
