@@ -58,6 +58,7 @@ void ToiletVocalsProcessor::prepareToPlay (double sampleRate, int)
 {
     engine.setParams (readParams());
     engine.prepare (sampleRate);
+    setLatencySamples (engine.latencySamples()); // the 2x oversampling filters
 }
 
 tvox::Params ToiletVocalsProcessor::readParams() const

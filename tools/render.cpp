@@ -242,6 +242,19 @@ static int cmdMeasure()
     const int fs = 48000; const Buf v = makeVocal (fs, 14.0f); const float ref = loudness (v, fs);
     Buf sine ((size_t) fs * 2); for (size_t i = 0; i < sine.size(); ++i) sine[i] = 0.251f * std::sin (6.2831853f * 1000.0f * (float) i / (float) fs);
     std::printf ("test vocal: loudness %.1f dB, peak %.1f dB\n", ref, peakDb (v));
+    {   // oversampler: latency and passband with both compressors out
+        tvox::Params p; p.autoLevel = false; p.comp1.on = p.comp2.on = false;
+        Buf imp ((size_t) fs / 10, 0.0f); imp[100] = 1.0f;
+        const Buf o = run (p, imp, fs).out; size_t pk = 0; for (size_t i = 0; i < o.size(); ++i) if (std::abs (o[i]) > std::abs (o[pk])) pk = i;
+        tvox::Engine e; e.prepare (fs);
+        std::printf ("oversampler: impulse lands %d samples late (reported %d);", (int) pk - 100, e.latencySamples());
+        for (float f : { 1000.0f, 10000.0f, 16000.0f, 20000.0f })
+        {
+            Buf t ((size_t) fs / 2); for (size_t i = 0; i < t.size(); ++i) t[i] = 0.25f * std::sin (6.2831853f * f * (float) i / (float) fs);
+            std::printf (" %g Hz %+.2f dB", f, harmonicDb (run (p, t, fs).out, fs, f, (size_t) fs / 4) - harmonicDb (t, fs, f, (size_t) fs / 4));
+        }
+        std::printf ("\n");
+    }
     for (int m = 0; m < 4; ++m)
     {
         std::printf ("\n%-8s fader   GR p95  GR mean   loudness  peak     1k@-12: GR    H2     H3\n", tvox::modelInfo (m).name);

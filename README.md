@@ -2,7 +2,7 @@
 
 By **Porcelain Audio**. One plugin on the vocal track and it's done. AU, VST3 and Standalone for macOS (Apple Silicon + Intel). Built with JUCE 8.
 
-Aimed at pop and rock vocals: in your face, with a crisp top end. This is an early build (v0.1) with the front of the chain only: automatic input leveling and the two compressor stages. EQ, de-essing, saturation and effects come next.
+Aimed at pop and rock vocals: in your face, with a crisp top end. This is an early build (v0.2) with the front of the chain only: automatic input leveling and the two compressor stages. EQ, de-essing, saturation and effects come next.
 
 ## Signal path
 
@@ -22,6 +22,15 @@ auto level -> INPUT fader -> COMP 1 -> COMP 2 -> OUTPUT fader
 | **Snake** | Distressor-style | 2:1, 1-2 dB | Nuke, about 18 dB, with even then odd harmonics |
 
 Makeup gain is automatic, so a fader changes how hard the stage works without changing the loudness (within about 1 dB).
+
+What each model takes from the published behaviour of its hardware:
+
+- **Plunger:** attack from 0.8 ms down to 0.05 ms, release that is quick after a lone peak and slower after sustained compression, an input stage that clips a little even with no compression, and at the top of the fader the all-buttons traits: a plateau-shaped curve, a lagging attack that lets transients through, and much more distortion.
+- **Float:** about 10 ms attack, a release that recovers half way in about 60 ms and then takes seconds, longer the harder and longer it has been working, and a detector that reacts more to high frequencies.
+- **Bidet:** quick attack and release at low ratios (its classic vocal use), moving to 1 ms / 50 ms at the top, with very low distortion throughout.
+- **Snake:** a knee about 30 dB long at 2:1 tightening to a brick wall at Nuke, distortion that rises as the times get faster, second harmonic that appears while it compresses over the upper third (Dist 2), and third harmonic at the very top (Dist 3).
+
+Plunger, Float and Bidet also saturate low frequencies first, the way transformer-coupled units do. The compressors run at twice the sample rate (below 88.2 kHz sessions) so the fast gain changes and harmonics don't alias; this adds 23 samples of latency, which the plugin reports to the host.
 
 **Output.** Final level, -24 to +12 dB.
 
