@@ -2,7 +2,7 @@
 
 By **Porcelain Audio**. One plugin on the vocal track and it's done. AU, VST3 and Standalone for macOS (Apple Silicon + Intel). Built with JUCE 8.
 
-Aimed at pop and rock vocals: in your face, with a crisp top end. This is an early build (v0.4): automatic input leveling, a low cut, the Low and High EQ faders and the two compressor stages. De-essing, saturation and effects come next.
+Aimed at pop and rock vocals: in your face, with a crisp top end. This is an early build (v0.5): automatic input leveling, a low cut, the Low and High EQ faders, the two compressor stages and a de-esser. Saturation and effects come next.
 
 ## Interface
 
@@ -12,12 +12,13 @@ The faceplate shows the whole planned plugin: Input, Low, High, Comp 1, Comp 2, 
 - **Low / High:** lights to pick the region or EQ model, and a fader that is flat in the middle.
 - **Comp 1 / Comp 2:** four lights to pick the model, a small In button above the slot, the amount fader, and a gain-reduction meter beside it.
 - **Toilet roll (bottom left):** the low cut. Drag the paper down to cut more; double-click to switch it off.
+- **Soap dispenser (bottom right):** the de-esser. Drag the soap level up for more; click the pump to switch range (up = high, down = low); double-click the bottle to switch it off. The small meter beside it shows how much it is taking off.
 - Drag a fader to see its value; double-click to reset it. Hover over a light's name for a one-line description.
 
 ## Signal path
 
 ```
-low cut -> auto level -> INPUT fader -> EQ cuts -> COMP 1 -> COMP 2 -> EQ boosts -> OUTPUT fader
+low cut -> auto level -> INPUT fader -> EQ cuts -> COMP 1 -> COMP 2 -> EQ boosts -> de-esser -> OUTPUT fader
 ```
 
 The Low and High faders cut before the compressors, so mud and harshness don't drive them, and boost after them, so added lows and highs don't make them pump. The low cut is first, so rumble stays out of the level measurement too.
@@ -50,20 +51,22 @@ The three transformer-coupled models (#1 76, LA #2A and CL #1b) also saturate lo
 
 | Light | Region | Up | Down |
 |---|---|---|---|
-| **Sub** | shelf around 110 Hz | chest and weight | boom, proximity effect |
-| **Lower** | bell at 230 Hz | warmth and body | mud |
 | **Upper** | bell at 450 Hz | thickness | boxiness |
+| **Lower** | bell at 230 Hz | warmth and body | mud |
+| **Sub** | shelf around 110 Hz | chest and weight | boom, proximity effect |
 
 **High.** Flat at the centre. Each light is a different EQ, built from the published behaviour of the hardware.
 
 | Light | Modelled on | Up | Down |
 |---|---|---|---|
-| **Bite** | SSL 4000 E "black knob" | high-mid bell at 3.8 kHz (Q 0.8-1.3, up to +10 dB) plus some of its 8 kHz shelf | the same curves, cutting |
-| **Sheen** | Neve 1073 | its single "12 kHz" shelf: a very gradual first-order slope that starts lifting in the upper mids, up to +10 dB | the same shelf, cutting |
-| **Silk** | Pultec EQP-1A | broad peak boost at 12 kHz, up to +12 dB | its separate high shelf attenuator, down to -10 dB |
 | **Air** | Maag EQ4 Air Band at 40 kHz | very wide boost-only shelf, up to +12 dB, heard as a long slope: about +4 dB at 10 kHz and +7 dB at 16 kHz at full | mirror of the boost (the hardware has no cut) |
+| **Silk** | Pultec EQP-1A | broad peak boost at 12 kHz, up to +12 dB | its separate high shelf attenuator, down to -10 dB |
+| **Sheen** | Neve 1073 | its single "12 kHz" shelf: a very gradual first-order slope that starts lifting in the upper mids, up to +10 dB | the same shelf, cutting |
+| **Bite** | SSL 4000 E "black knob" | high-mid bell at 3.8 kHz (Q 0.8-1.3, up to +10 dB) plus some of its 8 kHz shelf | the same curves, cutting |
 
 The high EQs run at twice the sample rate, so shelves above the audible band keep their analogue shape instead of being squeezed against the top of the spectrum; `./render eq` prints every curve and how closely each follows its analogue formula (within about 0.5 dB up to 16 kHz).
+
+**De-esser.** After the dbx 902: it compares the level of the highs with the level of the whole signal, in dB, so it behaves the same on quiet and loud lines and needs no threshold. Only the highs are turned down, by up to 14 dB at full, and it lets go at the 902's 925 dB per second. It comes last, so it works on the esses as the compressors and the High fader left them. Pump up (high range) listens above 5.5 kHz and dips from about 5 kHz, for "s" and brighter voices; pump down (low range) listens above 3.2 kHz and dips from about 3 kHz, for "sh" and deeper voices. `./render deess` shows what it takes off the esses and that it leaves everything else alone.
 
 **Output.** Final level, -24 to +12 dB.
 
@@ -84,7 +87,7 @@ Every push to `main` also builds a `.pkg` installer on GitHub Actions and attach
 
 ```
 Source/dsp/ToiletVocalsEngine.h  input leveling and the four compressor models (no JUCE dependency)
-Source/dsp/ToiletEq.h            low cut, Low and High EQ sections
+Source/dsp/ToiletEq.h            low cut, Low and High EQ sections, de-esser
 Source/dsp/MakeupTables.h        auto makeup gain, generated by `render calib`
 Source/PluginProcessor.*         JUCE processor, parameters, state
 Source/PluginEditor.*            controls and meters
@@ -102,6 +105,7 @@ c++ -std=c++20 -O2 -o render tools/render.cpp
 ./render measure                 # gain reduction, loudness and harmonics per model and fader position
 ./render diff                    # how different the models sound from each other
 ./render eq                      # frequency response of the low cut, Low and High sections
+./render deess                   # what the de-esser does to esses and to everything else
 ./render file in.wav out.wav m1=0 a1=0.5 m2=1 a2=0.3
 ```
 

@@ -11,6 +11,8 @@ Attr pct() { return Attr().withStringFromValueFunction ([] (float v, int) { retu
 Attr tone() { return Attr().withStringFromValueFunction ([] (float v, int) { return (v > 0.0f ? "+" : "") + juce::String (v, 1); }); }
 Attr hz()  { return Attr().withStringFromValueFunction ([] (float v, int) { return v <= tvox::kLowCutOffHz + 0.5f ? juce::String ("Off") : juce::String (juce::roundToInt (v)) + " Hz"; })
                           .withValueFromStringFunction ([] (const juce::String& s) { return s.containsIgnoreCase ("off") ? tvox::kLowCutOffHz : s.getFloatValue(); }); }
+Attr amount() { return Attr().withStringFromValueFunction ([] (float v, int) { return v < 0.05f ? juce::String ("Off") : juce::String (v, 1); })
+                             .withValueFromStringFunction ([] (const juce::String& s) { return s.containsIgnoreCase ("off") ? 0.0f : s.getFloatValue(); }); }
 Attr db()  { return Attr().withStringFromValueFunction ([] (float v, int) { return (v > 0.0f ? "+" : "") + juce::String (v, 1) + " dB"; }).withLabel ("dB"); }
 }
 
@@ -42,6 +44,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout ToiletVocalsProcessor::creat
     l.add (std::make_unique<APF> (pid (ID::low), "Low", juce::NormalisableRange<float> (-10.0f, 10.0f, 0.1f), d.low * 10.0f, tone()));
     l.add (std::make_unique<juce::AudioParameterChoice> (pid (ID::highModel), "High Model", highModels, d.highModel));
     l.add (std::make_unique<APF> (pid (ID::high), "High", juce::NormalisableRange<float> (-10.0f, 10.0f, 0.1f), d.high * 10.0f, tone()));
+    l.add (std::make_unique<APF> (pid (ID::deEss), "De-Ess", juce::NormalisableRange<float> (0.0f, 10.0f, 0.1f), d.deEss * 10.0f, amount()));
+    l.add (std::make_unique<juce::AudioParameterChoice> (pid (ID::deEssRange), "De-Ess Range", juce::StringArray { "Low", "High" }, d.deEssHigh ? 1 : 0));
     return l;
 }
 
@@ -52,7 +56,7 @@ ToiletVocalsProcessor::ToiletVocalsProcessor()
       apvts (*this, nullptr, "ToiletVocals", createLayout())
 {
     const char* const order[kNumParams] = { ID::input, ID::c1Model, ID::c1Amount, ID::c1On, ID::c2Model, ID::c2Amount, ID::c2On, ID::output,
-                                            ID::lowCut, ID::lowMode, ID::low, ID::highModel, ID::high };
+                                            ID::lowCut, ID::lowMode, ID::low, ID::highModel, ID::high, ID::deEss, ID::deEssRange };
     for (int i = 0; i < kNumParams; ++i)
     {
         raw[i] = apvts.getRawParameterValue (order[i]);
@@ -90,6 +94,8 @@ tvox::Params ToiletVocalsProcessor::readParams() const
     p.low = v (10) * 0.1f;
     p.highModel = juce::jlimit (0, tvox::kNumHighModels - 1, juce::roundToInt (v (11)));
     p.high = v (12) * 0.1f;
+    p.deEss = v (13) * 0.1f;
+    p.deEssHigh = v (14) > 0.5f;
     return p;
 }
 
@@ -117,7 +123,7 @@ void ToiletVocalsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     constexpr int chunk = 64; // parameters are re-read this often
     float scratch[chunk];
-    float gr1 = 0.0f, gr2 = 0.0f;
+    float gr1 = 0.0f, gr2 = 0.0f, deEss = 0.0f;
     for (int off = 0; off < n; off += chunk)
     {
         const int cn = juce::jmin (chunk, n - off);
@@ -127,6 +133,7 @@ void ToiletVocalsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         engine.process (L + off, r, cn);
         gr1 = juce::jmax (gr1, engine.gr1Db());
         gr2 = juce::jmax (gr2, engine.gr2Db());
+        deEss = juce::jmax (deEss, engine.deEssDb());
     }
 
     float peak = 0.0f;
@@ -137,6 +144,7 @@ void ToiletVocalsProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     hold (uiOutPeak, peak);
     hold (uiGr1, gr1);
     hold (uiGr2, gr2);
+    hold (uiDeEss, deEss);
     uiInputDb.store (engine.inputLevelDb(), std::memory_order_relaxed);
     uiLearned.store (engine.isLearned(), std::memory_order_relaxed);
     uiLearnProgress.store (engine.learnProgress(), std::memory_order_relaxed);

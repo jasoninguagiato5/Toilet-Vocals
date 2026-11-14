@@ -21,7 +21,7 @@ public:
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseMove (const juce::MouseEvent& e) override { hoverRow = rowAt (e.y); }
-    juce::String getTooltip() override { return describe (hoverRow); }
+    juce::String getTooltip() override { return describe (art::modeForRow (strip, hoverRow)); }
     void setLit (bool shouldBeLit) { if (lit != shouldBeLit) { lit = shouldBeLit; repaint(); } }
 
 private:
@@ -75,18 +75,41 @@ public:
 class MeterView : public juce::Component
 {
 public:
-    enum class Kind { level, levelWithTarget, gainReduction };
+    enum class Kind { level, levelWithTarget, gainReduction, deEss };
     explicit MeterView (Kind k) : kind (k) { setInterceptsMouseClicks (false, false); }
     void setValue (float v) { if (std::abs (v - value) > 0.05f) { value = v; repaint(); } }
     void paint (juce::Graphics& g) override
     {
         if (kind == Kind::gainReduction) art::drawGrMeter (g, getLocalBounds().toFloat(), value);
+        else if (kind == Kind::deEss) art::drawGrMeter (g, getLocalBounds().toFloat(), value, 1.0f);
         else art::drawLevelMeter (g, getLocalBounds().toFloat(), value, kind == Kind::levelWithTarget);
     }
 
 private:
     Kind kind;
     float value = -100.0f;
+};
+
+// The soap dispenser: drag the soap level for the amount of de-essing, click the pump for the range.
+class SoapControl : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    SoapControl (juce::RangedAudioParameter& amountParam, juce::RangedAudioParameter& rangeParam);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    std::function<void (const juce::String& amountText, bool highRange)> onChange;
+
+private:
+    bool onPump (const juce::MouseEvent& e) const { return e.y + getY() < art::kSoapPumpB; }
+    void changed() { if (onChange) onChange (amount.getText (norm, 16), high); repaint(); }
+    juce::RangedAudioParameter& amount;
+    float norm = 0.0f, dragStart = 0.0f;
+    bool high = true, dragging = false;
+    juce::ParameterAttachment amountAttach, rangeAttach;
 };
 
 class ToiletVocalsEditor : public juce::AudioProcessorEditor, private juce::Timer
@@ -127,6 +150,10 @@ private:
     ModelSelector lowModes, highModels;
     RollControl roll;
     juce::Label rollText;
+    SoapControl soap;
+    juce::Label soapText, soapRange;
+    MeterView soapMeter { MeterView::Kind::deEss };
+    float deEssShown = 0.0f;
     MeterView inMeter { MeterView::Kind::levelWithTarget }, outMeter { MeterView::Kind::level };
     RoundButton relearn;
     juce::Label levelStatus;

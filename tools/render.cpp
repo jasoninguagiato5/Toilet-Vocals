@@ -5,10 +5,11 @@
 //   render calib                               print Source/dsp/MakeupTables.h (auto makeup gain)
 //   render diff                                how different the models sound from each other
 //   render eq                                  frequency response of the low cut, Low and High sections
+//   render deess                               what the de-esser does to esses and to everything else
 //   render vocal <out.wav>                     the synthetic test vocal used for tuning
 //   render file <in.wav> <out.wav> [key=value ...]
 //       keys: in out m1 a1 on1 m2 a2 on2 auto makeup     (m = model 0..3, a = fader 0..1)
-//             lowcut (Hz) lowmode (0..2) low (-1..1) highmodel (0..3) high (-1..1)
+//             lowcut (Hz) lowmode (0..2) low (-1..1) highmodel (0..3) high (-1..1) deess (0..1) deesshigh (0/1)
 #include "../Source/dsp/ToiletVocalsEngine.h"
 #include <complex>
 #include <cstdio>
@@ -100,7 +101,9 @@ static float peakDb (const Buf& x) { float p = 0; for (float v : x) p = std::max
 // Synthetic "vocal": pitched pulse train through three formants, syllable and
 // phrase dynamics, breaths of silence and sibilant bursts. Normalised to the
 // reference level. Deterministic.
-static Buf makeVocal (int fs, float seconds)
+// `essBoost` > 1 makes the sibilants as loud as real ones get after compression (for the de-esser test);
+// the default keeps the signal the compressor calibration was done on.
+static Buf makeVocal (int fs, float seconds, float essBoost = 1.0f)
 {
     std::mt19937 rng (1234);
     auto uni = [&] (float a, float b) { return std::uniform_real_distribution<float> (a, b) (rng); };
@@ -134,7 +137,7 @@ static Buf makeVocal (int fs, float seconds)
                 const float t = (float) k / (float) len;
                 const float e = std::min (1.0f, (float) k / (float) att) * std::pow (1.0f - t, 0.6f) * (0.7f + 0.3f * std::sin (3.14159f * t));
                 v *= e * lvl;
-                if (ess && k < essLen) v = v * 0.2f + 0.5f * lvl * sib.run (uni (-1, 1)) * std::sin (3.14159f * (float) k / (float) essLen);
+                if (ess && k < essLen) v = v * 0.2f / essBoost + 0.5f * essBoost * lvl * sib.run (uni (-1, 1)) * std::sin (3.14159f * (float) k / (float) essLen);
                 x[i] = v;
             }
             i += (size_t) (uni (0.0f, 0.06f) * (float) fs);
@@ -325,6 +328,7 @@ static int cmdStress()
                 p.comp2 = { (int) uni (0, 3.99f), uni (0, 1), uni (0, 1) < 0.8f };
                 p.lowCutHz = uni (10, 300); p.lowMode = (int) uni (0, 2.99f); p.low = uni (-1.2f, 1.2f);
                 p.highModel = (int) uni (0, 3.99f); p.high = uni (-1.2f, 1.2f);
+                p.deEss = uni (-0.2f, 1.2f); p.deEssHigh = uni (0, 1) < 0.5f;
                 if (uni (0, 1) < 0.02f) e.relearn();
                 e.setParams (p); e.process (L.data() + i, R.data() + i, n);
                 for (int j = 0; j < n; ++j)
@@ -425,6 +429,53 @@ static int cmdEq()
     return 0;
 }
 
+// De-esser check on the test vocal: how much it takes off the esses, and how much it touches the rest.
+static int cmdDeess()
+{
+    const int fs = 48000; const Buf v = makeVocal (fs, 14.0f, 5.0f);
+    // mark each 10 ms frame of the input: 1 = ess (a third or more of its energy above 4 kHz), 0 = clearly not, -1 = ignore
+    const int frame = fs / 100; std::vector<int> ess;
+    {
+        tvox::Svf hp; hp.setHighpass ((float) fs, 4000.0f, 0.7071f);
+        for (size_t i = 0; i + (size_t) frame <= v.size(); i += (size_t) frame)
+        {
+            double eh = 0, ea = 0;
+            for (int j = 0; j < frame; ++j) { const float x = v[i + (size_t) j], h = hp.tick (x, 0); eh += h * h; ea += x * x; }
+            ess.push_back (ea < 1e-6 ? -1 : (eh > 0.33 * ea ? 1 : (eh < 0.03 * ea ? 0 : -1)));
+        }
+    }
+    auto bandDb = [&] (const Buf& x, int want, bool highBand)
+    {
+        tvox::Svf hp; hp.setHighpass ((float) fs, 4000.0f, 0.7071f); double e = 0; size_t n = 0;
+        for (size_t f = 0; f < ess.size(); ++f)
+            for (int j = 0; j < frame; ++j)
+            {
+                const float s = x[f * (size_t) frame + (size_t) j], h = hp.tick (s, 0);
+                if (ess[f] == want) { e += highBand ? h * h : (s - h) * (s - h); ++n; }
+            }
+        return (float) (10.0 * std::log10 (e / (double) std::max<size_t> (1, n) + 1e-12));
+    };
+    int nEss = 0; for (int e : ess) nEss += e == 1;
+    std::printf ("test vocal: %d of %zu frames are esses\n", nEss, ess.size());
+    std::printf ("%-28s  esses: highs   rest: highs  rest: lows   overall loudness\n", "");
+    for (float high : { 0.0f, 1.0f })
+        for (int range = 0; range < 2; ++range)
+            for (float amt : { 0.0f, 0.3f, 0.6f, 1.0f })
+            {
+                tvox::Params p; p.autoLevel = false; p.comp1.amount = 0.4f; p.comp2.amount = 0.3f; p.highModel = 3; p.high = high;
+                tvox::Params q = p; q.deEss = amt; q.deEssHigh = range == 1;
+                Buf ref = run (p, v, fs).out, out = run (q, v, fs).out;
+                const size_t lat = 39; // line the frames up with the input markers
+                ref.erase (ref.begin(), ref.begin() + lat); out.erase (out.begin(), out.begin() + lat);
+                ref.resize (v.size()); out.resize (v.size());
+                char label[64]; std::snprintf (label, sizeof label, "Air %+.0f, %s range, amount %.1f", high * 10.0f, range ? "high" : "low", amt);
+                std::printf ("%-28s   %+6.1f dB    %+6.1f dB   %+6.2f dB     %+6.2f dB\n", label,
+                             bandDb (out, 1, true) - bandDb (ref, 1, true), bandDb (out, 0, true) - bandDb (ref, 0, true),
+                             bandDb (out, 0, false) - bandDb (ref, 0, false), loudness (out, fs) - loudness (ref, fs));
+            }
+    return 0;
+}
+
 int main (int argc, char** argv)
 {
     const std::string cmd = argc > 1 ? argv[1] : "";
@@ -434,6 +485,7 @@ int main (int argc, char** argv)
     if (cmd == "calib") return cmdCalib();
     if (cmd == "diff") return cmdDiff();
     if (cmd == "eq") return cmdEq();
+    if (cmd == "deess") return cmdDeess();
     if (cmd == "vocal" && argc > 2) { const Buf v = makeVocal (48000, 20.0f); writeWav (argv[2], v, v, 48000); return 0; }
     if (cmd == "file" && argc > 3)
     {
@@ -452,6 +504,7 @@ int main (int argc, char** argv)
             else if (k == "makeup") p.autoMakeup = val > 0.5f;
             else if (k == "lowcut") p.lowCutHz = val; else if (k == "lowmode") p.lowMode = (int) val; else if (k == "low") p.low = val;
             else if (k == "highmodel") p.highModel = (int) val; else if (k == "high") p.high = val;
+            else if (k == "deess") p.deEss = val; else if (k == "deesshigh") p.deEssHigh = val > 0.5f;
             else { std::fprintf (stderr, "unknown key %s\n", k.c_str()); return 2; }
         }
         tvox::Engine e; e.prepare (fs); if (! learn) e.restoreLearn (true, 0.0f);
@@ -464,6 +517,6 @@ int main (int argc, char** argv)
         writeWav (argv[3], L, R, fs);
         return 0;
     }
-    std::fprintf (stderr, "usage: render stress | measure | tune | calib | diff | eq | vocal <out.wav> | file <in.wav> <out.wav> [key=value ...]\n");
+    std::fprintf (stderr, "usage: render stress | measure | tune | calib | diff | eq | deess | vocal <out.wav> | file <in.wav> <out.wav> [key=value ...]\n");
     return 2;
 }

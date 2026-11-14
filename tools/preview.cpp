@@ -21,6 +21,12 @@ int main (int argc, char** argv)
         art::drawRoll (g, 0.55f);
         g.setColour (art::kInk); g.setFont (art::labelFont (17.0f));
         g.drawText ("95 Hz", art::kRollTextX, art::kRollTextY, 90, 20, juce::Justification::centredLeft);
+        art::drawSoap (g, 0.45f, false);
+        art::drawGrMeter (g, { (float) art::kSoapMeterX, (float) art::kSoapMeterY, (float) art::kSoapMeterW, (float) art::kSoapMeterH }, 4.0f, 1.0f);
+        g.setFont (art::labelFont (17.0f));
+        g.drawText ("4.5", art::kSoapTextR - 90, art::kSoapTextY, 90, 20, juce::Justification::centredRight);
+        g.setFont (art::labelFont (12.0f));
+        g.drawText ("HIGH", art::kSoapTextR - 90, art::kSoapTextY + 21, 90, 14, juce::Justification::centredRight);
         art::drawModes (g, art::kLow, 1, true);  art::drawCap (g, art::midX (art::kLow), art::faderY (0.38f), true);
         art::drawModes (g, art::kHigh, 3, true); art::drawCap (g, art::midX (art::kHigh), art::faderY (0.72f), true);
         const float amounts[2] = { 0.35f, 0.6f }; const int models[2] = { 0, 1 }; const float gr[2] = { 7.0f, 4.0f };

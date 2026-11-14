@@ -14,14 +14,14 @@ const Colour kPorcelain (0xffece6da), kPorcelainHi (0xfff8f4ec), kPorcelainLo (0
              kChromeHi (0xfff2f2f0), kChromeLo (0xff7d7f82), kCream (0xfff3ead2);
 
 const Strip kStrips[kNumMid] = {
-    { "LOW",     { "SUB", "LOWER", "UPPER", "" },            3, Kind::eq },
-    { "HIGH",    { "BITE", "SHEEN", "SILK", "AIR" },         4, Kind::eq },
-    { "COMP 1",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },  4, Kind::comp },
-    { "COMP 2",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },  4, Kind::comp },
-    { "REVERB",  { "TIGHT", "LARGE", "CHAMBER", "" },        3, Kind::placeholder },
-    { "DELAY",   { "SLAP", "EIGHT", "QUARTER", "" },         3, Kind::placeholder },
-    { "WIDTH",   { "WIDE", "STEREO", "SPREADER", "" },       3, Kind::placeholder },
-    { "DIRT",    { "GRIT", "MASH", "GAS", "" },              3, Kind::placeholder } };
+    { "LOW",     { "SUB", "LOWER", "UPPER", "" },            3, Kind::eq,          true },
+    { "HIGH",    { "BITE", "SHEEN", "SILK", "AIR" },         4, Kind::eq,          true },
+    { "COMP 1",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },  4, Kind::comp,        false },
+    { "COMP 2",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },  4, Kind::comp,        false },
+    { "REVERB",  { "TIGHT", "LARGE", "CHAMBER", "" },        3, Kind::placeholder, false },
+    { "DELAY",   { "SLAP", "EIGHT", "QUARTER", "" },         3, Kind::placeholder, false },
+    { "WIDTH",   { "WIDE", "STEREO", "SPREADER", "" },       3, Kind::placeholder, false },
+    { "DIRT",    { "GRIT", "MASH", "GAS", "" },              3, Kind::placeholder, false } };
 
 void porcelainPanel (Graphics& g, Rectangle<float> r, float radius)
 {
@@ -270,9 +270,8 @@ void brandPlate (Graphics& g, Rectangle<float> r)
     g.drawText ("PORCELAIN AUDIO", r.withTrimmedTop (42.0f).withTrimmedBottom (8.0f), Just::centred, false);
 }
 
-void soapAndTowel (Graphics& g)
+void towels (Graphics& g)
 {
-    // towel stack
     for (int i = 0; i < 3; ++i)
     {
         const Rectangle<float> t (1008.0f, 612.0f + 24.0f * (float) i, 130.0f, 28.0f);
@@ -281,29 +280,20 @@ void soapAndTowel (Graphics& g)
         g.setGradientFill (juce::ColourGradient (Colour (0xffffffff), t.getX(), t.getY(), Colour (0xffdedbd2), t.getX(), t.getBottom(), false));
         g.fillRoundedRectangle (t, 12.0f);
     }
-    // bottle
-    const Rectangle<float> b (918.0f, 618.0f, 74.0f, 72.0f);
-    g.setColour (juce::Colours::black.withAlpha (0.2f));
-    g.fillRoundedRectangle (b.translated (3.0f, 3.0f), 12.0f);
-    g.setColour (Colour (0xffeef3f2).withAlpha (0.85f));
-    g.fillRoundedRectangle (b, 12.0f);
-    g.setGradientFill (juce::ColourGradient (Colour (0xfff2dc8a), b.getX(), b.getY() + 26.0f, Colour (0xffc9a640), b.getX(), b.getBottom(), false));
-    g.fillRoundedRectangle (b.withTrimmedTop (26.0f).reduced (4.0f, 3.0f), 9.0f);
-    g.setColour (juce::Colours::white.withAlpha (0.7f));
-    g.fillRoundedRectangle (b.getX() + 8.0f, b.getY() + 8.0f, 6.0f, 46.0f, 3.0f);
-    g.setColour (Colour (0xff9aa3a3));
-    g.drawRoundedRectangle (b, 12.0f, 1.2f);
-    // pump
-    chromeFill (g, { 942.0f, 596.0f, 26.0f, 24.0f });
-    g.fillRoundedRectangle (942.0f, 598.0f, 26.0f, 22.0f, 3.0f);
-    g.fillRect (951.0f, 574.0f, 8.0f, 26.0f);
-    g.fillRoundedRectangle (922.0f, 568.0f, 42.0f, 8.0f, 4.0f);
-    g.fillRect (922.0f, 572.0f, 6.0f, 10.0f);
+    g.setColour (kInk);
+    g.setFont (labelFont (13.0f));
+    g.drawText ("DE-ESS", Rectangle<float> ((float) kSoapTextR - 90.0f, (float) kSoapTextY - 16.0f, 90.0f, 14.0f), Just::centredRight, false);
 }
 } // namespace
 
 // ------------------------------------------------------------------ public
 const Strip& strip (int i) { return kStrips[juce::jlimit (0, kNumMid - 1, i)]; }
+
+int modeForRow (int stripIndex, int row)
+{
+    const auto& s = strip (stripIndex);
+    return s.reversed ? s.numModes - 1 - row : row;
+}
 
 float modeRowY (int numModes, int row)
 {
@@ -346,10 +336,11 @@ void drawModes (Graphics& g, int stripIndex, int selected, bool enabled)
     for (int row = 0; row < s.numModes; ++row)
     {
         const float y = modeRowY (s.numModes, row);
-        const bool on = row == selected;
+        const int mode = modeForRow (stripIndex, row);
+        const bool on = mode == selected;
         drawLed (g, left + 17.0f, y, 5.0f, on && enabled, kAmber);
         g.setColour (kInk.withAlpha (enabled ? 1.0f : 0.55f));
-        g.drawText (s.modes[row], Rectangle<float> (left + 29.0f, y - 9.0f, midW() - 31.0f, 18.0f), Just::centredLeft, false);
+        g.drawText (s.modes[mode], Rectangle<float> (left + 29.0f, y - 9.0f, midW() - 31.0f, 18.0f), Just::centredLeft, false);
     }
 }
 
@@ -458,15 +449,49 @@ void drawLevelMeter (Graphics& g, Rectangle<float> r, float db, bool markTarget)
     }
 }
 
-void drawGrMeter (Graphics& g, Rectangle<float> r, float grDb)
+void drawSoap (Graphics& g, float level, bool pumpDown)
+{
+    const float dy = pumpDown ? 11.0f : 0.0f;
+    // pump: spout and stem move, the collar stays
+    chromeFill (g, { 922.0f, 566.0f + dy, 42.0f, 34.0f });
+    g.fillRect (951.0f, 574.0f + dy, 8.0f, 30.0f - dy);
+    g.fillRoundedRectangle (922.0f, 568.0f + dy, 42.0f, 8.0f, 4.0f);
+    g.fillRect (922.0f, 572.0f + dy, 6.0f, 10.0f);
+    chromeFill (g, { 942.0f, 598.0f, 26.0f, 24.0f });
+    g.fillRoundedRectangle (942.0f, 600.0f, 26.0f, 20.0f, 3.0f);
+    g.setColour (Colour (0xff6f7275)); // outlines, so the chrome reads against the porcelain
+    g.drawRoundedRectangle (922.0f, 568.0f + dy, 42.0f, 8.0f, 4.0f, 1.0f);
+    g.drawRect (951.0f, 576.0f + dy, 8.0f, 24.0f - dy, 1.0f);
+    g.drawRoundedRectangle (942.0f, 600.0f, 26.0f, 20.0f, 3.0f, 1.0f);
+    // bottle
+    const Rectangle<float> b (918.0f, 618.0f, 74.0f, 72.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.2f));
+    g.fillRoundedRectangle (b.translated (3.0f, 3.0f), 12.0f);
+    g.setColour (Colour (0xffeef3f2).withAlpha (0.9f));
+    g.fillRoundedRectangle (b, 12.0f);
+    // soap: the fuller the bottle, the more de-essing
+    const auto inner = b.reduced (4.0f, 3.0f);
+    const float h = 5.0f + juce::jlimit (0.0f, 1.0f, level) * (inner.getHeight() - 9.0f);
+    g.saveState();
+    g.reduceClipRegion (inner.withTop (inner.getBottom() - h).toNearestInt());
+    g.setGradientFill (juce::ColourGradient (Colour (0xfff5e08e), b.getX(), inner.getBottom() - h, Colour (0xffc9a640), b.getX(), b.getBottom(), false));
+    g.fillRoundedRectangle (inner, 9.0f);
+    g.restoreState();
+    g.setColour (juce::Colours::white.withAlpha (0.7f));
+    g.fillRoundedRectangle (b.getX() + 8.0f, b.getY() + 8.0f, 6.0f, 46.0f, 3.0f);
+    g.setColour (Colour (0xff9aa3a3));
+    g.drawRoundedRectangle (b, 12.0f, 1.2f);
+}
+
+void drawGrMeter (Graphics& g, Rectangle<float> r, float grDb, float dbPerLight)
 {
     g.setColour (Colour (0xff0d0d0c));
     g.fillRoundedRectangle (r, 2.5f);
-    constexpr int segs = 12; // 2 dB each
+    constexpr int segs = 12;
     const float segH = (r.getHeight() - 4.0f) / (float) segs;
     for (int i = 0; i < segs; ++i)
     {
-        const bool lit = grDb >= 2.0f * (float) i + 1.0f;
+        const bool lit = grDb >= dbPerLight * ((float) i + 0.5f);
         const Colour c = i < 6 ? kAmber : i < 9 ? Colour (0xffff7a1e) : Colour (0xffff3b22);
         g.setColour (lit ? c : c.withMultipliedBrightness (0.2f));
         g.fillRoundedRectangle (r.getX() + 2.0f, r.getY() + 2.0f + segH * (float) i + 0.8f, r.getWidth() - 4.0f, segH - 1.6f, 1.0f);
@@ -577,6 +602,6 @@ void drawBackground (Graphics& g)
     checker (g, { 0, kFooterB, kW, kH - kFooterB }, 18);
     brandPlate (g, { (float) kW * 0.5f - 135.0f, 578.0f, 270.0f, 74.0f });
     rollHolder (g);
-    soapAndTowel (g);
+    towels (g);
 }
 }

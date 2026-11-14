@@ -1,7 +1,7 @@
 // Toilet Vocals engine (no JUCE dependency).
 //
 // Signal path:  low cut -> auto input leveling -> input fader -> EQ cuts
-//               -> compressor 1 -> compressor 2 -> EQ boosts
+//               -> compressor 1 -> compressor 2 -> EQ boosts -> de-esser
 //               -> (input fader undone) -> output fader
 //
 // The Low and High faders (ToiletEq.h) cut before the compressors, so mud and
@@ -388,6 +388,7 @@ struct Params
     float lowCutHz = kLowCutOffHz;      // 20 = off
     int lowMode = 1;   float low = 0.0f;   // fader -1..+1
     int highModel = 3; float high = 0.0f;  // fader -1..+1
+    float deEss = 0.0f; bool deEssHigh = true; // amount 0..1, low or high range
     bool autoLevel = true;  // false = input fader acts on the raw track level
     bool autoMakeup = true;
 };
@@ -407,6 +408,7 @@ public:
         s1.prepare ((double) fsStage);
         s2.prepare ((double) fsStage);
         cEq = 1.0f - std::exp (-(float) kEqInterval / (0.012f * fs));
+        deEsser.prepare (fs);
         reset();
     }
 
@@ -417,6 +419,7 @@ public:
         lowCut.reset(); lowPre.reset(); lowPost.reset(); highPre.reset(); highPost.reset();
         retuneEq (true);
         eqCountdown = 0;
+        deEsser.set (p.deEss, p.deEssHigh); deEsser.reset(); deEssMax = 0.0f;
         blockSum = 0.0; blockCount = 0;
         normDb = learned || activeBlocks >= 3 ? normTarget() : 0.0f;
         preDb = normDb + p.inputDb;
@@ -435,6 +438,7 @@ public:
         lowFader.targetAmount = std::min (1.0f, std::max (-1.0f, p.low));
         highFader.targetMode = std::min (kNumHighModels - 1, std::max (0, p.highModel));
         highFader.targetAmount = std::min (1.0f, std::max (-1.0f, p.high));
+        deEsser.set (p.deEss, p.deEssHigh);
     }
 
     // ---- automatic input level
@@ -453,10 +457,11 @@ public:
     float inputLevelDb() const { return 10.0f * std::log10 (std::max (meterMs, 1.0e-10f)); } // level into the compressors
     float gr1Db() const { return gr1; }
     float gr2Db() const { return gr2; }
+    float deEssDb() const { return deEssMax; }
 
     void process (float* L, float* R, int n)
     {
-        float g1 = 0.0f, g2 = 0.0f;
+        float g1 = 0.0f, g2 = 0.0f, ds = 0.0f;
         for (int i = 0; i < n; ++i)
         {
             if (--eqCountdown <= 0) { eqCountdown = kEqInterval; retuneEq (false); }
@@ -484,10 +489,13 @@ public:
                 chain (l, r, g1, g2);
             }
 
+            deEsser.process (l, r);   // last, so it sees what the compressors and the High boost did to the esses
+            ds = std::max (ds, deEsser.reductionDb());
+
             const float post = dbToGain (postDb);
             L[i] = l * post; R[i] = r * post;
         }
-        gr1 = g1; gr2 = g2;
+        gr1 = g1; gr2 = g2; deEssMax = ds;
     }
 
 private:
@@ -558,6 +566,8 @@ private:
     static constexpr int kEqInterval = 32;
     LowCut lowCut; LowBand lowPre, lowPost; HighBand highPre, highPost;
     EqFader lowFader, highFader;
+    DeEsser deEsser;
+    float deEssMax = 0.0f;
     float cutHz = kLowCutOffHz, fsStage = 96000.0f, cEq = 1.0f;
     int eqCountdown = 0;
     bool oversample = true;

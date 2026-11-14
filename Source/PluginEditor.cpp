@@ -41,7 +41,7 @@ int ModelSelector::rowAt (int y) const
     return juce::jlimit (0, n - 1, (int) std::floor (((float) (y + getY()) - first) / step + 0.5f));
 }
 
-void ModelSelector::mouseDown (const juce::MouseEvent& e) { attach.setValueAsCompleteGesture ((float) rowAt (e.y)); }
+void ModelSelector::mouseDown (const juce::MouseEvent& e) { attach.setValueAsCompleteGesture ((float) art::modeForRow (strip, rowAt (e.y))); }
 
 // --------------------------------------------------------- toilet roll
 RollControl::RollControl (juce::RangedAudioParameter& p)
@@ -76,6 +76,43 @@ void RollControl::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWhee
     attach.setValueAsCompleteGesture (param.convertFrom0to1 (juce::jlimit (0.0f, 1.0f, norm - w.deltaY * 0.25f)));
 }
 
+// ------------------------------------------------------- soap dispenser
+SoapControl::SoapControl (juce::RangedAudioParameter& amountParam, juce::RangedAudioParameter& rangeParam)
+    : amount (amountParam),
+      amountAttach (amountParam, [this] (float v) { norm = amount.convertTo0to1 (v); changed(); }),
+      rangeAttach (rangeParam, [this] (float v) { high = v > 0.5f; changed(); })
+{
+    amountAttach.sendInitialUpdate();
+    rangeAttach.sendInitialUpdate();
+}
+
+void SoapControl::paint (juce::Graphics& g)
+{
+    g.setOrigin (-getX(), -getY());
+    art::drawSoap (g, norm, ! high);
+}
+
+void SoapControl::mouseDown (const juce::MouseEvent& e)
+{
+    if (onPump (e)) { rangeAttach.setValueAsCompleteGesture (high ? 0.0f : 1.0f); return; } // pump down = low range
+    dragging = true; dragStart = norm; amountAttach.beginGesture();
+}
+void SoapControl::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! dragging) return;
+    const float n = juce::jlimit (0.0f, 1.0f, dragStart - (float) e.getDistanceFromDragStartY() / 110.0f); // drag up = more
+    amountAttach.setValueAsPartOfGesture (amount.convertFrom0to1 (n));
+}
+void SoapControl::mouseUp (const juce::MouseEvent&) { if (dragging) { dragging = false; amountAttach.endGesture(); } }
+void SoapControl::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (! onPump (e)) amountAttach.setValueAsCompleteGesture (amount.convertFrom0to1 (amount.getDefaultValue()));
+}
+void SoapControl::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w)
+{
+    amountAttach.setValueAsCompleteGesture (amount.convertFrom0to1 (juce::jlimit (0.0f, 1.0f, norm + w.deltaY * 0.25f)));
+}
+
 // ------------------------------------------------------------------- editor
 ToiletVocalsEditor::ToiletVocalsEditor (ToiletVocalsProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
@@ -83,7 +120,8 @@ ToiletVocalsEditor::ToiletVocalsEditor (ToiletVocalsProcessor& p)
       comp2 (art::kComp2, *p.apvts.getParameter (PID::c2Model)),
       lowModes (art::kLow, *p.apvts.getParameter (PID::lowMode), [] (int row) { return juce::String (tvox::lowModeInfo (row).blurb); }),
       highModels (art::kHigh, *p.apvts.getParameter (PID::highModel), [] (int row) { return juce::String (tvox::highModelInfo (row).blurb); }),
-      roll (*p.apvts.getParameter (PID::lowCut))
+      roll (*p.apvts.getParameter (PID::lowCut)),
+      soap (*p.apvts.getParameter (PID::deEss), *p.apvts.getParameter (PID::deEssRange))
 {
     setLookAndFeel (&lnf);
     setOpaque (true);
@@ -114,6 +152,27 @@ ToiletVocalsEditor::ToiletVocalsEditor (ToiletVocalsProcessor& p)
     addAndMakeVisible (roll);
     if (auto* cut = proc.apvts.getParameter (PID::lowCut))
         rollText.setText (cut->getCurrentValueAsText(), juce::dontSendNotification);
+
+    soapText.setFont (art::labelFont (17.0f));
+    soapRange.setFont (art::labelFont (12.0f));
+    for (auto* label : { &soapText, &soapRange })
+    {
+        label->setJustificationType (juce::Justification::centredRight);
+        label->setInterceptsMouseClicks (false, false);
+        addAndMakeVisible (*label);
+    }
+    soap.onChange = [this] (const juce::String& text, bool highRange)
+    {
+        soapText.setText (text, juce::dontSendNotification);
+        soapRange.setText (highRange ? "HIGH" : "LOW", juce::dontSendNotification);
+    };
+    soap.setTooltip ("De-esser: drag the soap up for more. Click the pump to switch range: up for \"s\" and brighter voices, down for \"sh\" and deeper voices. Double-click the bottle to switch it off.");
+    addAndMakeVisible (soap);
+    addAndMakeVisible (soapMeter);
+    if (auto* amt = proc.apvts.getParameter (PID::deEss))
+        soapText.setText (amt->getCurrentValueAsText(), juce::dontSendNotification);
+    if (auto* range = proc.apvts.getParameter (PID::deEssRange))
+        soapRange.setText (range->getValue() > 0.5f ? "HIGH" : "LOW", juce::dontSendNotification);
 
     setupComp (comp1, PID::c1On);
     setupComp (comp2, PID::c2On);
@@ -185,6 +244,10 @@ void ToiletVocalsEditor::resized()
     highModels.setBounds (art::modeArea (art::kHigh).toNearestInt());
     roll.setBounds (art::kRollX, art::kRollY, art::kRollW, art::kRollH);
     rollText.setBounds (art::kRollTextX, art::kRollTextY, 90, 20);
+    soap.setBounds (art::kSoapX, art::kSoapY, art::kSoapW, art::kSoapH);
+    soapText.setBounds (art::kSoapTextR - 90, art::kSoapTextY, 90, 20);
+    soapRange.setBounds (art::kSoapTextR - 90, art::kSoapTextY + 21, 90, 14);
+    soapMeter.setBounds (art::kSoapMeterX, art::kSoapMeterY, art::kSoapMeterW, art::kSoapMeterH);
 
     Comp* comps[2] = { &comp1, &comp2 };
     const int strips[2] = { art::kComp1, art::kComp2 };
@@ -214,6 +277,8 @@ void ToiletVocalsEditor::timerCallback()
     comp1.gr.setValue (comp1.in.getToggleState() ? comp1.shown : 0.0f);
     comp2.gr.setValue (comp2.in.getToggleState() ? comp2.shown : 0.0f);
     outMeter.setValue (outShown);
+    deEssShown = ease (deEssShown, proc.uiDeEss.exchange (0.0f), 0.5f);
+    soapMeter.setValue (deEssShown);
 
     // input level: steady green once set, blinking amber while it listens
     const bool learned = proc.uiLearned.load();

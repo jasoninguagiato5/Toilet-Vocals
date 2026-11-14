@@ -50,6 +50,8 @@ public:
         static constexpr const char* low = "low";
         static constexpr const char* highModel = "highmodel";
         static constexpr const char* high = "high";
+        static constexpr const char* deEss = "deess";
+        static constexpr const char* deEssRange = "deessrange";
     };
 
     // Throws away the learned input level and listens again.
@@ -57,7 +59,7 @@ public:
 
     // ---- read by the editor
     std::atomic<float> uiInputDb { -100.0f };   // level going into the compressors (RMS)
-    std::atomic<float> uiGr1 { 0.0f }, uiGr2 { 0.0f };
+    std::atomic<float> uiGr1 { 0.0f }, uiGr2 { 0.0f }, uiDeEss { 0.0f };
     std::atomic<float> uiOutPeak { 0.0f };
     std::atomic<bool> uiLearned { false };
     std::atomic<float> uiLearnProgress { 0.0f };
@@ -68,7 +70,7 @@ private:
     tvox::Params readParams() const;
 
     tvox::Engine engine;
-    static constexpr int kNumParams = 13;
+    static constexpr int kNumParams = 15;
     std::atomic<float>* raw[kNumParams] {};
     std::atomic<int> pendingCmd { cmdNone };
     std::atomic<bool> restoreLearned { false };

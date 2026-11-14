@@ -16,6 +16,12 @@
 //                      reaches far down into the audible band. (The cut direction mirrors the
 //                      boost; the hardware has no cut.)
 //
+//   De-esser  after the dbx 902: it compares the level of the highs with the level of the whole
+//             signal in dB, so it acts the same on quiet and loud lines with nothing to set but
+//             the amount. Only the highs are turned down (the 902's "HF only" mode), here with
+//             a shelf that dips as far as the detector asks: centred at 3 kHz in the low
+//             range ("sh", deeper voices) and 5 kHz in the high range ("s", brighter voices).
+//
 // All filters are trapezoidal state-variable / one-pole forms: stable at low frequencies in
 // single precision and safe to retune while audio runs.
 #pragma once
@@ -71,12 +77,15 @@ public:
         coeffs (tanf_ (hz, fs) / std::sqrt (A), 1.0f / q);
         m0 = 1.0f; m1 = k * (A - 1.0f); m2 = A * A - 1.0f;
     }
-    void setHighShelf (float fs, float hz, float q, float db)
+    void setHighShelf (float fs, float hz, float q, float db) { setHighShelfTan (tanf_ (hz, fs), q, db); }
+    // Same, with tan(pi*hz/fs) worked out beforehand, for shelves whose gain moves every few samples.
+    void setHighShelfTan (float t, float q, float db)
     {
-        const float A = std::pow (10.0f, db / 40.0f);
-        coeffs (tanf_ (hz, fs) * std::sqrt (A), 1.0f / q);
+        const float A = std::exp (db * 0.05756463f); // 10^(db/40)
+        coeffs (t * std::sqrt (A), 1.0f / q);
         m0 = A * A; m1 = k * (1.0f - A) * A; m2 = 1.0f - A * A;
     }
+    static float tangent (float hz, float fs) { return tanf_ (hz, fs); }
     void setHighpass (float fs, float hz, float q)
     {
         coeffs (tanf_ (hz, fs), 1.0f / q);
@@ -254,6 +263,69 @@ public:
 private:
     Svf bell, shelf; OnePole pole;
     bool on = false, useBell = false, useShelf = false, usePole = false;
+};
+
+// --------------------------------------------------------------- de-esser
+class DeEsser
+{
+public:
+    void prepare (float sampleRate)
+    {
+        fs = sampleRate;
+        cEnv = 1.0f - std::exp (-1.0f / (0.003f * fs));
+        relPerSample = 925.0f / fs;               // the 902 lets go at a fixed 925 dB per second
+        cAtt = 1.0f - std::exp (-1.0f / (0.0015f * fs));
+        highRange = true; retune();
+        set (0.0f, true);
+        reset();
+    }
+    void reset() { detect.reset(); shelf.reset(); eHi = eAll = 0.0f; gr = shelfDb = 0.0f; shelf.setHighShelfTan (shelfTan, 0.7f, 0.0f); }
+
+    // amount 0..1; the range picks where it listens and where it cuts
+    void set (float amount, bool high)
+    {
+        amt = std::min (1.0f, std::max (0.0f, amount));
+        on = amt > 1.0e-4f;
+        rangeDb = 14.0f * amt;                         // most it will ever take off
+        thrDb = -10.0f - 5.0f * amt;                   // highs this close to the full level count as an "s"
+        if (high != highRange) { highRange = high; retune(); }
+    }
+
+    float reductionDb() const { return gr; }
+
+    inline void process (float& l, float& r)
+    {
+        if (! on && gr <= 0.0f) { if (active) { reset(); active = false; } return; }
+        active = true;
+        const float hl = detect.tick (l, 0), hr = detect.tick (r, 1);
+        eHi += (hl * hl + hr * hr - eHi) * cEnv;
+        eAll += (l * l + r * r - eAll) * cEnv;
+
+        float target = 0.0f;
+        if (on && eAll > 2.0e-7f) // nothing to do in near-silence
+        {
+            const float diffDb = 4.3429448f * std::log ((eHi + 1.0e-12f) / eAll); // highs relative to everything
+            target = rangeDb * std::min (1.0f, std::max (0.0f, (diffDb - thrDb) / 8.0f));
+        }
+        if (target > gr) gr += (target - gr) * std::min (1.0f, cAtt * (1.0f + 0.25f * (target - gr))); // grabs faster the further over
+        else gr = std::max (target, gr - relPerSample);
+
+        if (std::abs (gr - shelfDb) > 0.05f) { shelfDb = gr; shelf.setHighShelfTan (shelfTan, 0.7f, -gr); }
+        l = shelf.tick (l, 0); r = shelf.tick (r, 1);
+    }
+
+private:
+    void retune()
+    {
+        detect.setHighpass (fs, highRange ? 5500.0f : 3200.0f, 0.7071f);
+        shelfTan = Svf::tangent (highRange ? 5000.0f : 3000.0f, fs);
+        shelf.setHighShelfTan (shelfTan, 0.7f, -shelfDb);
+    }
+
+    Svf detect, shelf;
+    float fs = 48000.0f, amt = 0.0f, rangeDb = 0.0f, thrDb = -12.0f, shelfTan = 0.3f, shelfDb = 0.0f;
+    float cEnv = 1, cAtt = 1, relPerSample = 0.02f, eHi = 0, eAll = 0, gr = 0;
+    bool on = false, highRange = true, active = false;
 };
 
 // One fader with a mode switch: glides to new positions, and changes mode by
