@@ -33,10 +33,10 @@ Makeup gain is automatic, so a fader changes how hard the stage works without ch
 
 What each model takes from the published behaviour of its hardware:
 
-- **#1 76:** attack from 0.8 ms down to 0.05 ms, release that is quick after a lone peak and slower after sustained compression, an input stage that clips a little even with no compression, and at the top of the fader the all-buttons traits: a plateau-shaped curve, a lagging attack that lets transients through, and much more distortion.
+- **#1 76:** grabs instantly (0.8 ms down to 0.05 ms attack) and lets go fast, quicker after a lone peak and slower after sustained compression. Its input stage adds grit even with no compression, and it gets dirtier the harder it works. At the top of the fader it takes on the all-buttons traits: a plateau-shaped curve, a lagging attack that lets transients through, and much more distortion.
 - **LA #2A:** about 10 ms attack, a release that recovers half way in about 60 ms and then takes seconds, longer the harder and longer it has been working, and a detector that reacts more to high frequencies.
 - **CL #1b:** quick attack and release at low ratios (its classic vocal use), moving to 1 ms / 50 ms at the top, with very low distortion throughout.
-- **IBSsor:** a knee about 30 dB long at 2:1 tightening to a brick wall at Nuke, distortion that rises as the times get faster, second harmonic that appears while it compresses over the upper third (Dist 2), and third harmonic at the very top (Dist 3).
+- **IBSsor:** a slower attack (10 ms down to 1.5 ms) that lets consonants through before it clamps, a knee about 30 dB long at 2:1 tightening to a brick wall at Nuke, and a release that lets go quickly at first and then slows. It stays clean until the upper third of the fader, where second harmonic appears while it compresses (Dist 2), with third harmonic at the very top (Dist 3).
 
 The three transformer-coupled models (#1 76, LA #2A and CL #1b) also saturate low frequencies first. The compressors run at twice the sample rate (below 88.2 kHz sessions) so the fast gain changes and harmonics don't alias; this adds 23 samples of latency, which the plugin reports to the host.
 
@@ -74,6 +74,7 @@ Offline harness (no JUCE needed):
 c++ -std=c++20 -O2 -o render tools/render.cpp
 ./render stress                  # 120 randomized runs at 44.1/48/96 kHz
 ./render measure                 # gain reduction, loudness and harmonics per model and fader position
+./render diff                    # how different the models sound from each other
 ./render file in.wav out.wav m1=0 a1=0.5 m2=1 a2=0.3
 ```
 

@@ -53,7 +53,7 @@ inline const ModelInfo& modelInfo (int i)
 struct Tuning { float thrLo, thrHi; };
 inline std::array<Tuning, kNumModels>& tuning()
 {
-    static std::array<Tuning, kNumModels> t { { { -8.4f, -27.0f }, { -9.4f, -21.2f }, { -10.7f, -20.4f }, { -6.9f, -25.7f } } };
+    static std::array<Tuning, kNumModels> t { { { -8.9f, -27.1f }, { -9.4f, -21.2f }, { -10.7f, -20.4f }, { -8.1f, -27.0f } } };
     return t;
 }
 
@@ -102,10 +102,12 @@ inline Curve curveFor (int model, float a)
             c.slope = pts<4> ({ P { 0.0f, slopeOf (4) }, P { 0.33f, slopeOf (8) }, P { 0.55f, slopeOf (12) }, P { 0.78f, slopeOf (20) } }, a);
             c.kneeDb = lerp (lerp (7.0f, 4.0f, std::min (1.0f, a / 0.78f)), 1.0f, all);
             c.attMs = lerp (expLerp (0.8f, 0.05f, std::min (1.0f, a / 0.78f)), 0.5f, all);
-            c.relMs = lerp (expLerp (220.0f, 70.0f, std::min (1.0f, a / 0.78f)), 50.0f, all);
-            c.relSlowMs = lerp (expLerp (600.0f, 200.0f, std::min (1.0f, a / 0.78f)), 120.0f, all);
-            c.satIn = lerp (0.25f, 0.5f, a);     // the early revision's input stage clips on its own
-            c.satOdd = lerp (0.25f, 0.6f, a) + 0.9f * all;
+            // Vocal 1176 settings keep the release at or near its fastest: that quick recovery
+            // (and the grit it brings) is the urgency people use it for.
+            c.relMs = lerp (expLerp (110.0f, 55.0f, std::min (1.0f, a / 0.78f)), 50.0f, all);
+            c.relSlowMs = lerp (expLerp (380.0f, 160.0f, std::min (1.0f, a / 0.78f)), 120.0f, all);
+            c.satIn = lerp (0.4f, 0.75f, a);     // the early revision's input stage clips on its own
+            c.satOdd = lerp (0.35f, 0.75f, a) + 0.9f * all;
             c.satGr = lerp (0.3f, 1.0f, a);
             c.satEven = lerp (0.04f, 0.10f, a);
             c.evenGr = 0.05f;
@@ -154,13 +156,20 @@ inline Curve curveFor (int model, float a)
                                 P { 0.5f, slopeOf (6) }, P { 0.67f, slopeOf (10) }, P { 0.84f, slopeOf (20) },
                                 P { 1.0f, slopeOf (100) } }, a);
             c.kneeDb = lerp (30.0f, 2.0f, a);
-            c.attMs = expLerp (8.0f, 0.25f, a);
-            c.relMs = expLerp (240.0f, 60.0f, a);
-            c.relSlowMs = expLerp (500.0f, 140.0f, a);
-            c.satOdd = lerp (0.08f, 0.25f, a) + 1.0f * smoothstep (0.82f, 1.0f, a); // Dist 3 at the very top
-            c.satGr = lerp (0.2f, 0.9f, a);
-            c.satEven = 0.01f;
-            c.evenGr = 0.03f + 0.5f * smoothstep (0.6f, 0.9f, a);                  // Dist 2 over the upper third
+            // Vocal settings from its manual sit around the middle of the attack knob, a few
+            // milliseconds, so consonants get through before it clamps (the 1176 never allows that).
+            c.attMs = expLerp (10.0f, 1.5f, a);
+            // Its release is logarithmic: lets go quickly at first, then slows.
+            c.relMs = expLerp (140.0f, 70.0f, a);
+            c.relSlowMs = c.relMs;
+            c.memory = 0.35f;
+            c.memAttMs = 60.0f;
+            c.memRelMs = expLerp (900.0f, 350.0f, a);
+            // Clean (it is a low-distortion VCA design) until the distortion modes come in.
+            c.satOdd = lerp (0.02f, 0.05f, a) + 1.0f * smoothstep (0.82f, 1.0f, a); // Dist 3 at the very top
+            c.satGr = lerp (0.05f, 0.5f, a);
+            c.satEven = 0.005f;
+            c.evenGr = 0.5f * smoothstep (0.6f, 0.9f, a);                           // Dist 2 over the upper third
             break; // transformerless: no low-frequency saturation
     }
     return c;

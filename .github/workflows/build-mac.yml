@@ -15,7 +15,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     env:
-      VERSION: "0.3.1"
+      VERSION: "0.3.2"
       HAS_CERTS: ${{ secrets.MACOS_CERT_P12 != '' }}
       HAS_NOTARY: ${{ secrets.APPLE_ID != '' }}
     steps:

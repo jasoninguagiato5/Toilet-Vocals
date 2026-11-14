@@ -3,6 +3,7 @@
 //   render measure                             gain reduction / loudness / distortion per model and fader position
 //   render tune                                solve the per-model thresholds for the gain-reduction targets
 //   render calib                               print Source/dsp/MakeupTables.h (auto makeup gain)
+//   render diff                                how different the models sound from each other
 //   render vocal <out.wav>                     the synthetic test vocal used for tuning
 //   render file <in.wav> <out.wav> [key=value ...]
 //       keys: in out m1 a1 on1 m2 a2 on2 auto makeup     (m = model 0..3, a = fader 0..1)
@@ -257,14 +258,14 @@ static int cmdMeasure()
     }
     for (int m = 0; m < 4; ++m)
     {
-        std::printf ("\n%-8s fader   GR p95  GR mean   loudness  peak     1k@-12: GR    H2     H3\n", tvox::modelInfo (m).name);
+        std::printf ("\n%-8s fader   GR p95  GR mean   loudness  peak   crest   1k@-12: GR    H2     H3\n", tvox::modelInfo (m).name);
         for (float a : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
         {
             const auto r = run (solo (m, a), v, fs);
             const auto s = run (solo (m, a), sine, fs);
             const float h1 = harmonicDb (s.out, fs, 1000.0f, (size_t) fs);
-            std::printf ("         %4.2f   %6.1f  %6.1f    %+6.2f   %+6.1f           %5.1f  %5.1f  %5.1f\n", a, r.grP95, r.grMean,
-                         loudness (r.out, fs) - ref, peakDb (r.out), s.grP95,
+            std::printf ("         %4.2f   %6.1f  %6.1f    %+6.2f   %+6.1f  %5.1f         %5.1f  %5.1f  %5.1f\n", a, r.grP95, r.grMean,
+                         loudness (r.out, fs) - ref, peakDb (r.out), peakDb (r.out) - loudness (r.out, fs), s.grP95,
                          harmonicDb (s.out, fs, 2000.0f, (size_t) fs) - h1, harmonicDb (s.out, fs, 3000.0f, (size_t) fs) - h1);
         }
     }
@@ -335,6 +336,28 @@ static int cmdStress()
     return 0;
 }
 
+// How different two models sound on the test vocal at the same fader position:
+// the level of (A - B) relative to A. 0 dB = unrelated, very negative = nearly identical.
+static int cmdDiff()
+{
+    const int fs = 48000; const Buf v = makeVocal (fs, 14.0f);
+    std::printf ("difference between models at the same fader position (dB relative to the signal; closer to 0 = more different)\n       ");
+    for (int a = 0; a < 4; ++a) for (int b = a + 1; b < 4; ++b) std::printf (" %d vs %d ", a, b);
+    std::printf ("\n");
+    for (float amt : { 0.25f, 0.5f, 0.75f, 1.0f })
+    {
+        Buf o[4]; for (int m = 0; m < 4; ++m) o[m] = run (solo (m, amt), v, fs).out;
+        std::printf ("  %.2f ", amt);
+        for (int a = 0; a < 4; ++a) for (int b = a + 1; b < 4; ++b)
+        {
+            Buf d = o[a]; for (size_t i = 0; i < d.size(); ++i) d[i] -= o[b][i];
+            std::printf (" %6.1f ", loudness (d, fs) - loudness (o[a], fs));
+        }
+        std::printf ("\n");
+    }
+    return 0;
+}
+
 int main (int argc, char** argv)
 {
     const std::string cmd = argc > 1 ? argv[1] : "";
@@ -342,6 +365,7 @@ int main (int argc, char** argv)
     if (cmd == "measure") return cmdMeasure();
     if (cmd == "tune") return cmdTune();
     if (cmd == "calib") return cmdCalib();
+    if (cmd == "diff") return cmdDiff();
     if (cmd == "vocal" && argc > 2) { const Buf v = makeVocal (48000, 20.0f); writeWav (argv[2], v, v, 48000); return 0; }
     if (cmd == "file" && argc > 3)
     {
@@ -370,6 +394,6 @@ int main (int argc, char** argv)
         writeWav (argv[3], L, R, fs);
         return 0;
     }
-    std::fprintf (stderr, "usage: render stress | measure | tune | calib | vocal <out.wav> | file <in.wav> <out.wav> [key=value ...]\n");
+    std::fprintf (stderr, "usage: render stress | measure | tune | calib | diff | vocal <out.wav> | file <in.wav> <out.wav> [key=value ...]\n");
     return 2;
 }
