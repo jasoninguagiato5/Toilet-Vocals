@@ -4,10 +4,13 @@
 //   render tune                                solve the per-model thresholds for the gain-reduction targets
 //   render calib                               print Source/dsp/MakeupTables.h (auto makeup gain)
 //   render diff                                how different the models sound from each other
+//   render eq                                  frequency response of the low cut, Low and High sections
 //   render vocal <out.wav>                     the synthetic test vocal used for tuning
 //   render file <in.wav> <out.wav> [key=value ...]
 //       keys: in out m1 a1 on1 m2 a2 on2 auto makeup     (m = model 0..3, a = fader 0..1)
+//             lowcut (Hz) lowmode (0..2) low (-1..1) highmodel (0..3) high (-1..1)
 #include "../Source/dsp/ToiletVocalsEngine.h"
+#include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -243,16 +246,17 @@ static int cmdMeasure()
     const int fs = 48000; const Buf v = makeVocal (fs, 14.0f); const float ref = loudness (v, fs);
     Buf sine ((size_t) fs * 2); for (size_t i = 0; i < sine.size(); ++i) sine[i] = 0.251f * std::sin (6.2831853f * 1000.0f * (float) i / (float) fs);
     std::printf ("test vocal: loudness %.1f dB, peak %.1f dB\n", ref, peakDb (v));
+    for (int rate : { 44100, 48000 })
     {   // oversampler: latency and passband with both compressors out
         tvox::Params p; p.autoLevel = false; p.comp1.on = p.comp2.on = false;
-        Buf imp ((size_t) fs / 10, 0.0f); imp[100] = 1.0f;
-        const Buf o = run (p, imp, fs).out; size_t pk = 0; for (size_t i = 0; i < o.size(); ++i) if (std::abs (o[i]) > std::abs (o[pk])) pk = i;
-        tvox::Engine e; e.prepare (fs);
-        std::printf ("oversampler: impulse lands %d samples late (reported %d);", (int) pk - 100, e.latencySamples());
-        for (float f : { 1000.0f, 10000.0f, 16000.0f, 20000.0f })
+        Buf imp ((size_t) rate / 10, 0.0f); imp[100] = 1.0f;
+        const Buf o = run (p, imp, rate).out; size_t pk = 0; for (size_t i = 0; i < o.size(); ++i) if (std::abs (o[i]) > std::abs (o[pk])) pk = i;
+        tvox::Engine e; e.prepare (rate);
+        std::printf ("oversampler at %d: impulse lands %d samples late (reported %d);", rate, (int) pk - 100, e.latencySamples());
+        for (float f : { 1000.0f, 10000.0f, 16000.0f, 18000.0f, 20000.0f })
         {
-            Buf t ((size_t) fs / 2); for (size_t i = 0; i < t.size(); ++i) t[i] = 0.25f * std::sin (6.2831853f * f * (float) i / (float) fs);
-            std::printf (" %g Hz %+.2f dB", f, harmonicDb (run (p, t, fs).out, fs, f, (size_t) fs / 4) - harmonicDb (t, fs, f, (size_t) fs / 4));
+            Buf t ((size_t) rate / 2); for (size_t i = 0; i < t.size(); ++i) t[i] = 0.25f * std::sin (6.2831853f * f * (float) i / (float) rate);
+            std::printf (" %g Hz %+.2f dB", f, harmonicDb (run (p, t, rate).out, rate, f, (size_t) rate / 4) - harmonicDb (t, rate, f, (size_t) rate / 4));
         }
         std::printf ("\n");
     }
@@ -319,6 +323,8 @@ static int cmdStress()
                 tvox::Params p; p.inputDb = uni (-12, 12); p.outputDb = uni (-24, 12); p.autoLevel = uni (0, 1) < 0.7f;
                 p.comp1 = { (int) uni (0, 3.99f), uni (0, 1), uni (0, 1) < 0.8f };
                 p.comp2 = { (int) uni (0, 3.99f), uni (0, 1), uni (0, 1) < 0.8f };
+                p.lowCutHz = uni (10, 300); p.lowMode = (int) uni (0, 2.99f); p.low = uni (-1.2f, 1.2f);
+                p.highModel = (int) uni (0, 3.99f); p.high = uni (-1.2f, 1.2f);
                 if (uni (0, 1) < 0.02f) e.relearn();
                 e.setParams (p); e.process (L.data() + i, R.data() + i, n);
                 for (int j = 0; j < n; ++j)
@@ -358,6 +364,67 @@ static int cmdDiff()
     return 0;
 }
 
+// Magnitude response of the engine with both compressors out, from its impulse response.
+static std::vector<float> responseDb (tvox::Params p, int fs, const std::vector<float>& freqs)
+{
+    p.autoLevel = false; p.comp1.on = p.comp2.on = false;
+    Buf imp ((size_t) fs / 2, 0.0f); imp[0] = 0.25f;
+    const Buf h = run (p, imp, fs).out;
+    std::vector<float> out;
+    for (float f : freqs)
+    {
+        std::complex<double> acc = 0.0;
+        for (size_t n = 0; n < h.size(); ++n) acc += (double) h[n] * std::polar (1.0, -6.283185307179586 * f * (double) n / fs);
+        out.push_back ((float) (20.0 * std::log10 (std::abs (acc) / 0.25 + 1e-12)));
+    }
+    return out;
+}
+
+static int cmdEq()
+{
+    const std::vector<float> lf { 30, 50, 80, 110, 160, 230, 320, 450, 700, 1000, 2000 };
+    const std::vector<float> hf { 500, 1000, 2000, 3000, 4000, 5000, 6500, 8000, 10000, 12000, 14000, 16000, 18000, 20000 };
+    auto row = [] (const char* label, const std::vector<float>& v) { std::printf ("  %-22s", label); for (float d : v) std::printf (" %6.1f", d); std::printf ("\n"); };
+    auto head = [] (const std::vector<float>& f) { std::printf ("  %-22s", "Hz"); for (float v : f) std::printf (" %6.0f", v); std::printf ("\n"); };
+    for (int fs : { 44100, 48000, 96000 })
+    {
+        std::printf ("\n===== %d Hz =====\nlow cut\n", fs); head (lf);
+        for (float hz : { 20.0f, 60.0f, 100.0f, 160.0f, 250.0f })
+        { tvox::Params p; p.lowCutHz = hz; char b[40]; std::snprintf (b, sizeof b, "%g Hz", hz); row (b, responseDb (p, fs, lf)); }
+        std::printf ("Low fader\n"); head (lf);
+        for (int m = 0; m < tvox::kNumLowModes; ++m)
+            for (float x : { 1.0f, 0.5f, -0.5f, -1.0f })
+            { tvox::Params p; p.lowMode = m; p.low = x; char b[40]; std::snprintf (b, sizeof b, "%s %+.1f", tvox::lowModeInfo (m).name, x); row (b, responseDb (p, fs, lf)); }
+        std::printf ("High fader\n"); head (hf);
+        for (int m = 0; m < tvox::kNumHighModels; ++m)
+            for (float x : { 1.0f, 0.5f, -0.5f, -1.0f })
+            { tvox::Params p; p.highModel = m; p.high = x; char b[40]; std::snprintf (b, sizeof b, "%s %+.1f", tvox::highModelInfo (m).name, x); row (b, responseDb (p, fs, hf)); }
+
+        // How closely the digital filters follow the analogue curves they stand for, fader at +1.
+        std::printf ("High models vs. their analogue prototype at full boost (error in dB)\n"); head (hf);
+        using C = std::complex<double>;
+        auto bellA = [] (double f, double f0, double q, double db) { const double A = std::pow (10.0, db / 40.0); const C s (0.0, f / f0); return std::abs ((s * s + s * (A / q) + 1.0) / (s * s + s / (A * q) + 1.0)); };
+        auto shelf2A = [] (double f, double f0, double q, double db) { const double A = std::pow (10.0, db / 40.0); const C s (0.0, f / f0); return std::abs (A * (A * s * s + s * (std::sqrt (A) / q) + 1.0) / (s * s + s * (std::sqrt (A) / q) + A)); };
+        auto shelf1A = [] (double f, double fp, double g) { return std::abs (C (1.0, f * g / fp) / C (1.0, f / fp)); };
+        for (int m = 0; m < tvox::kNumHighModels; ++m)
+        {
+            tvox::Params p; p.highModel = m; p.high = 1.0f;
+            auto meas = responseDb (p, fs, hf);
+            for (size_t i = 0; i < hf.size(); ++i)
+            {
+                const double f = hf[i]; double t = 1.0;
+                if (m == 0) t = bellA (f, 3800.0, 1.3, 10.0) * shelf2A (f, 8000.0, 0.7, 4.0);
+                if (m == 1) t = shelf1A (f, 5000.0 * std::sqrt (std::pow (10.0, 0.5)), std::pow (10.0, 0.5));
+                if (m == 2) t = bellA (f, 12000.0, 0.7, 12.0);
+                if (m == 3) t = shelf1A (f, 28000.0, std::pow (10.0, 0.6));
+                meas[i] -= (float) (20.0 * std::log10 (t));
+            }
+            row (tvox::highModelInfo (m).name, meas);
+        }
+    }
+    return 0;
+}
+
 int main (int argc, char** argv)
 {
     const std::string cmd = argc > 1 ? argv[1] : "";
@@ -366,6 +433,7 @@ int main (int argc, char** argv)
     if (cmd == "tune") return cmdTune();
     if (cmd == "calib") return cmdCalib();
     if (cmd == "diff") return cmdDiff();
+    if (cmd == "eq") return cmdEq();
     if (cmd == "vocal" && argc > 2) { const Buf v = makeVocal (48000, 20.0f); writeWav (argv[2], v, v, 48000); return 0; }
     if (cmd == "file" && argc > 3)
     {
@@ -382,6 +450,8 @@ int main (int argc, char** argv)
             else if (k == "m2") p.comp2.model = (int) val; else if (k == "a2") p.comp2.amount = val; else if (k == "on2") p.comp2.on = val > 0.5f;
             else if (k == "auto") { p.autoLevel = val > 0.5f; learn = p.autoLevel; }
             else if (k == "makeup") p.autoMakeup = val > 0.5f;
+            else if (k == "lowcut") p.lowCutHz = val; else if (k == "lowmode") p.lowMode = (int) val; else if (k == "low") p.low = val;
+            else if (k == "highmodel") p.highModel = (int) val; else if (k == "high") p.high = val;
             else { std::fprintf (stderr, "unknown key %s\n", k.c_str()); return 2; }
         }
         tvox::Engine e; e.prepare (fs); if (! learn) e.restoreLearn (true, 0.0f);
@@ -394,6 +464,6 @@ int main (int argc, char** argv)
         writeWav (argv[3], L, R, fs);
         return 0;
     }
-    std::fprintf (stderr, "usage: render stress | measure | tune | calib | diff | vocal <out.wav> | file <in.wav> <out.wav> [key=value ...]\n");
+    std::fprintf (stderr, "usage: render stress | measure | tune | calib | diff | eq | vocal <out.wav> | file <in.wav> <out.wav> [key=value ...]\n");
     return 2;
 }

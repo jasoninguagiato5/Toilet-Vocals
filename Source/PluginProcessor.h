@@ -45,6 +45,11 @@ public:
         static constexpr const char* c2Amount = "c2amount";
         static constexpr const char* c2On = "c2on";
         static constexpr const char* output = "output";
+        static constexpr const char* lowCut = "lowcut";
+        static constexpr const char* lowMode = "lowmode";
+        static constexpr const char* low = "low";
+        static constexpr const char* highModel = "highmodel";
+        static constexpr const char* high = "high";
     };
 
     // Throws away the learned input level and listens again.
@@ -63,7 +68,8 @@ private:
     tvox::Params readParams() const;
 
     tvox::Engine engine;
-    std::atomic<float>* raw[8] {};
+    static constexpr int kNumParams = 13;
+    std::atomic<float>* raw[kNumParams] {};
     std::atomic<int> pendingCmd { cmdNone };
     std::atomic<bool> restoreLearned { false };
     std::atomic<float> restoreDb { 0.0f };

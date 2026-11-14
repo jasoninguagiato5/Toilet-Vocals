@@ -24,15 +24,20 @@ inline float midLeft (int i) { return (float) kMidL + midW() * (float) i; }
 inline float midX (int i) { return midLeft (i) + midW() * 0.5f; }
 inline float faderY (float norm) { return (float) kTravelB - norm * (float) (kTravelB - kTravelT); }
 
+enum class Kind { placeholder, eq, comp };
 struct Strip
 {
     const char* name;
     const char* modes[4];
     int numModes;
-    bool active;
+    Kind kind;
 };
 const Strip& strip (int i);                      // the eight middle strips, left to right
-constexpr int kComp1 = 2, kComp2 = 3;            // which of them are the compressors
+constexpr int kLow = 0, kHigh = 1, kComp1 = 2, kComp2 = 3;
+
+// The toilet roll (low cut) in the footer
+constexpr int kRollX = 36, kRollY = 560, kRollW = 180, kRollH = kH - kRollY;
+constexpr int kRollTextX = 232, kRollTextY = 588;
 juce::Rectangle<float> modeArea (int i);         // where strip i's mode lights sit
 float modeRowY (int numModes, int row);          // centre y of one mode row
 
@@ -44,6 +49,7 @@ void drawModes (juce::Graphics&, int stripIndex, int selected, bool enabled);   
 void drawLed (juce::Graphics&, float cx, float cy, float r, bool on, juce::Colour onColour);
 void drawTopButton (juce::Graphics&, float cx, float cy, bool lit, bool down);  // a strip's In button
 void drawRoundButton (juce::Graphics&, juce::Rectangle<float>, juce::Colour, bool down);
+void drawRoll (juce::Graphics&, float unrolled);                                // 0 = rolled up, 1 = paper down to the floor
 void drawLevelMeter (juce::Graphics&, juce::Rectangle<float>, float db, bool markTarget); // 0 .. -27 dB
 void drawGrMeter (juce::Graphics&, juce::Rectangle<float>, float grDb);                  // 0 .. 24 dB, grows downwards
 

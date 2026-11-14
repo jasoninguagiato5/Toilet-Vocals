@@ -8,6 +8,9 @@ using Attr = juce::AudioParameterFloatAttributes;
 
 Attr pct() { return Attr().withStringFromValueFunction ([] (float v, int) { return juce::String (juce::roundToInt (v * 100.0f)) + " %"; })
                           .withValueFromStringFunction ([] (const juce::String& s) { return s.getFloatValue() / 100.0f; }); }
+Attr tone() { return Attr().withStringFromValueFunction ([] (float v, int) { return (v > 0.0f ? "+" : "") + juce::String (v, 1); }); }
+Attr hz()  { return Attr().withStringFromValueFunction ([] (float v, int) { return v <= tvox::kLowCutOffHz + 0.5f ? juce::String ("Off") : juce::String (juce::roundToInt (v)) + " Hz"; })
+                          .withValueFromStringFunction ([] (const juce::String& s) { return s.containsIgnoreCase ("off") ? tvox::kLowCutOffHz : s.getFloatValue(); }); }
 Attr db()  { return Attr().withStringFromValueFunction ([] (float v, int) { return (v > 0.0f ? "+" : "") + juce::String (v, 1) + " dB"; }).withLabel ("dB"); }
 }
 
@@ -28,6 +31,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout ToiletVocalsProcessor::creat
     l.add (std::make_unique<APF> (pid (ID::c2Amount), "Comp 2", juce::NormalisableRange<float> (0.0f, 1.0f), d.comp2.amount, pct()));
     l.add (std::make_unique<juce::AudioParameterBool> (pid (ID::c2On), "Comp 2 On", d.comp2.on));
     l.add (std::make_unique<APF> (pid (ID::output), "Output", juce::NormalisableRange<float> (-24.0f, 12.0f, 0.1f), d.outputDb, db()));
+
+    juce::StringArray lowModes, highModels;
+    for (int i = 0; i < tvox::kNumLowModes; ++i) lowModes.add (tvox::lowModeInfo (i).name);
+    for (int i = 0; i < tvox::kNumHighModels; ++i) highModels.add (tvox::highModelInfo (i).name);
+    juce::NormalisableRange<float> cutRange (tvox::kLowCutOffHz, tvox::kLowCutMaxHz, 1.0f);
+    cutRange.setSkewForCentre (90.0f);
+    l.add (std::make_unique<APF> (pid (ID::lowCut), "Low Cut", cutRange, d.lowCutHz, hz()));
+    l.add (std::make_unique<juce::AudioParameterChoice> (pid (ID::lowMode), "Low Mode", lowModes, d.lowMode));
+    l.add (std::make_unique<APF> (pid (ID::low), "Low", juce::NormalisableRange<float> (-10.0f, 10.0f, 0.1f), d.low * 10.0f, tone()));
+    l.add (std::make_unique<juce::AudioParameterChoice> (pid (ID::highModel), "High Model", highModels, d.highModel));
+    l.add (std::make_unique<APF> (pid (ID::high), "High", juce::NormalisableRange<float> (-10.0f, 10.0f, 0.1f), d.high * 10.0f, tone()));
     return l;
 }
 
@@ -37,8 +51,9 @@ ToiletVocalsProcessor::ToiletVocalsProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "ToiletVocals", createLayout())
 {
-    const char* const order[8] = { ID::input, ID::c1Model, ID::c1Amount, ID::c1On, ID::c2Model, ID::c2Amount, ID::c2On, ID::output };
-    for (int i = 0; i < 8; ++i)
+    const char* const order[kNumParams] = { ID::input, ID::c1Model, ID::c1Amount, ID::c1On, ID::c2Model, ID::c2Amount, ID::c2On, ID::output,
+                                            ID::lowCut, ID::lowMode, ID::low, ID::highModel, ID::high };
+    for (int i = 0; i < kNumParams; ++i)
     {
         raw[i] = apvts.getRawParameterValue (order[i]);
         jassert (raw[i] != nullptr);
@@ -70,6 +85,11 @@ tvox::Params ToiletVocalsProcessor::readParams() const
     p.comp1 = { model (1), v (2), v (3) > 0.5f };
     p.comp2 = { model (4), v (5), v (6) > 0.5f };
     p.outputDb = v (7);
+    p.lowCutHz = v (8);
+    p.lowMode = juce::jlimit (0, tvox::kNumLowModes - 1, juce::roundToInt (v (9)));
+    p.low = v (10) * 0.1f;
+    p.highModel = juce::jlimit (0, tvox::kNumHighModels - 1, juce::roundToInt (v (11)));
+    p.high = v (12) * 0.1f;
     return p;
 }
 

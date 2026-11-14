@@ -14,14 +14,14 @@ const Colour kPorcelain (0xffece6da), kPorcelainHi (0xfff8f4ec), kPorcelainLo (0
              kChromeHi (0xfff2f2f0), kChromeLo (0xff7d7f82), kCream (0xfff3ead2);
 
 const Strip kStrips[kNumMid] = {
-    { "BASS",    { "SUB", "LOWER", "UPPER", "" },            3, false },
-    { "TREBLE",  { "BITE", "TOP", "ROOF", "" },              3, false },
-    { "COMP 1",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },   4, true },
-    { "COMP 2",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },   4, true },
-    { "REVERB",  { "TIGHT", "LARGE", "CHAMBER", "" },        3, false },
-    { "DELAY",   { "SLAP", "EIGHT", "QUARTER", "" },         3, false },
-    { "WIDTH",   { "WIDE", "STEREO", "SPREADER", "" },       3, false },
-    { "DIRT",    { "GRIT", "MASH", "GAS", "" },              3, false } };
+    { "LOW",     { "SUB", "LOWER", "UPPER", "" },            3, Kind::eq },
+    { "HIGH",    { "BITE", "SHEEN", "SILK", "AIR" },         4, Kind::eq },
+    { "COMP 1",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },  4, Kind::comp },
+    { "COMP 2",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },  4, Kind::comp },
+    { "REVERB",  { "TIGHT", "LARGE", "CHAMBER", "" },        3, Kind::placeholder },
+    { "DELAY",   { "SLAP", "EIGHT", "QUARTER", "" },         3, Kind::placeholder },
+    { "WIDTH",   { "WIDE", "STEREO", "SPREADER", "" },       3, Kind::placeholder },
+    { "DIRT",    { "GRIT", "MASH", "GAS", "" },              3, Kind::placeholder } };
 
 void porcelainPanel (Graphics& g, Rectangle<float> r, float radius)
 {
@@ -225,10 +225,9 @@ void vent (Graphics& g, float cx, float cy, float r)
     g.restoreState();
 }
 
-void toiletRoll (Graphics& g)
+void rollHolder (Graphics& g)
 {
-    const Colour paper (0xfffbfaf6), shade (0xffd3cfc4);
-    // holder: two wall mounts and the bar between them
+    // two wall mounts and the bar between them; the roll itself is drawn by drawRoll()
     chromeFill (g, { 40.0f, 588.0f, 172.0f, 10.0f });
     g.fillRect (40.0f, 588.0f, 172.0f, 10.0f);
     for (float x : { 44.0f, 208.0f })
@@ -238,23 +237,9 @@ void toiletRoll (Graphics& g)
         chromeFill (g, { x - 16.0f, 577.0f, 32.0f, 32.0f });
         g.fillEllipse (x - 16.0f, 577.0f, 32.0f, 32.0f);
     }
-    // the sheet hanging off the front, then the roll over it
-    g.setColour (juce::Colours::black.withAlpha (0.18f));
-    g.fillRect (76.0f, 600.0f, 92.0f, 92.0f);
-    g.setGradientFill (juce::ColourGradient (paper, 70.0f, 0.0f, shade, 162.0f, 0.0f, false));
-    g.fillRect (70.0f, 596.0f, 92.0f, 96.0f);
-    g.setColour (Colour (0xffc4c0b4));
-    for (float y : { 640.0f, 676.0f }) // perforations
-        for (float x = 74.0f; x < 160.0f; x += 6.0f)
-            g.fillRect (x, y, 3.0f, 1.0f);
-    g.setGradientFill (juce::ColourGradient (Colour (0xffffffff), 0.0f, 564.0f, shade, 0.0f, 624.0f, false));
-    g.fillRoundedRectangle (70.0f, 564.0f, 112.0f, 58.0f, 26.0f);
-    g.setColour (Colour (0xffe6e3da));
-    g.fillEllipse (158.0f, 566.0f, 28.0f, 54.0f);
-    g.setColour (Colour (0xffb9b5aa));
-    g.drawEllipse (158.0f, 566.0f, 28.0f, 54.0f, 1.0f);
-    g.setColour (Colour (0xff8f8b81));
-    g.fillEllipse (167.0f, 583.0f, 10.0f, 20.0f);
+    g.setColour (kInk);
+    g.setFont (labelFont (13.0f));
+    g.drawText ("LOW CUT", Rectangle<float> ((float) kRollTextX, (float) kRollTextY - 16.0f, 90.0f, 14.0f), Just::centredLeft, false);
 }
 
 void brandPlate (Graphics& g, Rectangle<float> r)
@@ -418,6 +403,30 @@ void drawRoundButton (Graphics& g, Rectangle<float> r, Colour c, bool down)
     g.strokePath (arc, juce::PathStrokeType (1.4f));
 }
 
+void drawRoll (Graphics& g, float unrolled)
+{
+    const Colour paper (0xfffbfaf6), shade (0xffd3cfc4);
+    const float bottom = 630.0f + juce::jlimit (0.0f, 1.0f, unrolled) * 62.0f;
+    // the sheet hanging off the front...
+    g.setColour (juce::Colours::black.withAlpha (0.18f));
+    g.fillRect (76.0f, 600.0f, 92.0f, bottom - 600.0f);
+    g.setGradientFill (juce::ColourGradient (paper, 70.0f, 0.0f, shade, 162.0f, 0.0f, false));
+    g.fillRect (70.0f, 596.0f, 92.0f, bottom - 596.0f);
+    g.setColour (Colour (0xffc4c0b4));
+    for (float y = bottom - 4.0f; y > 626.0f; y -= 30.0f) // perforations travel with the paper
+        for (float x = 74.0f; x < 160.0f; x += 6.0f)
+            g.fillRect (x, y, 3.0f, 1.0f);
+    // ...then the roll over it
+    g.setGradientFill (juce::ColourGradient (Colour (0xffffffff), 0.0f, 564.0f, shade, 0.0f, 624.0f, false));
+    g.fillRoundedRectangle (70.0f, 564.0f, 112.0f, 58.0f, 26.0f);
+    g.setColour (Colour (0xffe6e3da));
+    g.fillEllipse (158.0f, 566.0f, 28.0f, 54.0f);
+    g.setColour (Colour (0xffb9b5aa));
+    g.drawEllipse (158.0f, 566.0f, 28.0f, 54.0f, 1.0f);
+    g.setColour (Colour (0xff8f8b81));
+    g.fillEllipse (167.0f, 583.0f, 10.0f, 20.0f);
+}
+
 void drawLevelMeter (Graphics& g, Rectangle<float> r, float db, bool markTarget)
 {
     chromeFill (g, r);
@@ -532,26 +541,27 @@ void drawBackground (Graphics& g)
         const auto& s = strip (i);
         const float cx = midX (i);
         slot (g, cx);
-        if (s.active)
+        stripLabel (g, s.name, cx, midW());
+        if (s.kind == Kind::comp)
+        {
             scale (g, cx, -1, { { "10", 1.0f }, { "", 0.75f }, { "5", 0.5f }, { "", 0.25f }, { "0", 0.0f } });
-        else
+            g.setColour (kInk.withAlpha (0.7f));
+            g.setFont (labelFont (9.5f));
+            g.drawText ("GR", Rectangle<float> (cx + 20.0f, (float) kTravelB + 4.0f, 18.0f, 10.0f), Just::centred, false);
+        }
+        else if (s.kind == Kind::eq)
+        {
+            scale (g, cx, -1, { { "+10", 1.0f }, { "", 0.75f }, { "0", 0.5f }, { "", 0.25f }, { "-10", 0.0f } });
+            screw (g, cx, kTopDotY, 4.5f);
+        }
+        else // ghosted until the module exists
         {
             scale (g, cx, -1, { { "+10", 22.0f / 24.0f }, { "", 17.0f / 24.0f }, { "0", 0.5f }, { "", 7.0f / 24.0f }, { "-10", 2.0f / 24.0f } });
             screw (g, cx, kTopDotY, 4.5f);
             drawModes (g, i, -1, false);
             drawCap (g, cx, faderY (0.5f), true);
-        }
-        stripLabel (g, s.name, cx, midW());
-        if (! s.active) // ghosted until the module exists
-        {
             g.setColour (Colour (0xffe6dfd1).withAlpha (0.42f));
             g.fillRect (Rectangle<float> (midLeft (i) + 2.0f, (float) kStripT + 10.0f, midW() - 4.0f, (float) (kStripB - kStripT) - 16.0f));
-        }
-        else
-        {
-            g.setColour (kInk.withAlpha (0.7f));
-            g.setFont (labelFont (9.5f));
-            g.drawText ("GR", Rectangle<float> (cx + 20.0f, (float) kTravelB + 4.0f, 18.0f, 10.0f), Just::centred, false);
         }
     }
 
@@ -566,7 +576,7 @@ void drawBackground (Graphics& g)
     porcelainPanel (g, { 2.0f, (float) kFooterT, (float) kW - 4.0f, (float) (kFooterB - kFooterT) }, 12.0f);
     checker (g, { 0, kFooterB, kW, kH - kFooterB }, 18);
     brandPlate (g, { (float) kW * 0.5f - 135.0f, 578.0f, 270.0f, 74.0f });
-    toiletRoll (g);
+    rollHolder (g);
     soapAndTowel (g);
 }
 }

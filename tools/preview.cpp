@@ -18,6 +18,11 @@ int main (int argc, char** argv)
         art::drawCap (g, art::kInputFaderX, art::faderY (0.5f), true);
         art::drawLevelMeter (g, { art::kInputMeterX, (float) art::kMeterT, (float) art::kMeterW, (float) (art::kMeterB - art::kMeterT) }, -17.0f, true);
         art::drawRoundButton (g, { art::kInputMeterX + 15.0f, 490.0f, 20.0f, 20.0f }, juce::Colour (0xffc22a1e), false);
+        art::drawRoll (g, 0.55f);
+        g.setColour (art::kInk); g.setFont (art::labelFont (17.0f));
+        g.drawText ("95 Hz", art::kRollTextX, art::kRollTextY, 90, 20, juce::Justification::centredLeft);
+        art::drawModes (g, art::kLow, 1, true);  art::drawCap (g, art::midX (art::kLow), art::faderY (0.38f), true);
+        art::drawModes (g, art::kHigh, 3, true); art::drawCap (g, art::midX (art::kHigh), art::faderY (0.72f), true);
         const float amounts[2] = { 0.35f, 0.6f }; const int models[2] = { 0, 1 }; const float gr[2] = { 7.0f, 4.0f };
         for (int c = 0; c < 2; ++c)
         {

@@ -1,7 +1,12 @@
 // Toilet Vocals engine (no JUCE dependency).
 //
-// Signal path:  auto input leveling -> input fader -> compressor 1 -> compressor 2
+// Signal path:  low cut -> auto input leveling -> input fader -> EQ cuts
+//               -> compressor 1 -> compressor 2 -> EQ boosts
 //               -> (input fader undone) -> output fader
+//
+// The Low and High faders (ToiletEq.h) cut before the compressors, so mud and
+// harshness don't drive them, and boost after them, so added lows and highs
+// don't make them pump.
 //
 // Each compressor stage has four models and ONE fader ("amount"). The bottom of
 // the fader is that unit's gentlest usable setting, the top its most extreme:
@@ -19,6 +24,7 @@
 #include <cmath>
 #include <cstdint>
 #include "MakeupTables.h"
+#include "ToiletEq.h"
 
 namespace tvox
 {
@@ -320,12 +326,12 @@ private:
 class Halfband2x
 {
 public:
-    static constexpr int kTaps = 47, kHalf = 24;  // even-index taps: 24. Of the odd ones only the centre is non-zero.
-    static constexpr int kLatency = 23;           // samples at the base rate, up + down
+    static constexpr int kTaps = 79, kHalf = 40;  // even-index taps: 40. Of the odd ones only the centre is non-zero.
+    static constexpr int kLatency = 39;           // samples at the base rate, up + down
 
     Halfband2x()
     {
-        const double beta = 8.0, pi = 3.14159265358979;
+        const double beta = 6.0, pi = 3.14159265358979;
         auto bessel = [] (double x) { double sum = 1.0, t = 1.0; for (int k = 1; k < 30; ++k) { t *= (x / (2.0 * k)) * (x / (2.0 * k)); sum += t; } return sum; };
         double h[kTaps], total = 0.0;
         for (int n = 0; n < kTaps; ++n)
@@ -365,7 +371,7 @@ public:
     }
 
 private:
-    static constexpr int kCentre = 11; // the centre tap is odd-index tap number 11
+    static constexpr int kCentre = 19; // the centre tap is odd-index tap number 19
     struct Ch { float x[kHalf] {}, a[kHalf] {}, b[kHalf] {}; int xi = 0, di = 0; };
     float even[kHalf] {}, centre = 0.5f;
     Ch ch[2];
@@ -379,6 +385,9 @@ struct Params
     StageParams comp1 { 0, 0.35f, true };
     StageParams comp2 { 1, 0.35f, true };
     float outputDb = 0.0f;
+    float lowCutHz = kLowCutOffHz;      // 20 = off
+    int lowMode = 1;   float low = 0.0f;   // fader -1..+1
+    int highModel = 3; float high = 0.0f;  // fader -1..+1
     bool autoLevel = true;  // false = input fader acts on the raw track level
     bool autoMakeup = true;
 };
@@ -394,14 +403,20 @@ public:
         cGain = 1.0f - std::exp (-1.0f / (0.15f * fs));
         cFast = 1.0f - std::exp (-1.0f / (0.02f * fs));
         cMeter = 1.0f - std::exp (-1.0f / (0.3f * fs));
-        s1.prepare (sampleRate * (oversample ? 2.0 : 1.0));
-        s2.prepare (sampleRate * (oversample ? 2.0 : 1.0));
+        fsStage = (float) (sampleRate * (oversample ? 2.0 : 1.0));
+        s1.prepare ((double) fsStage);
+        s2.prepare ((double) fsStage);
+        cEq = 1.0f - std::exp (-(float) kEqInterval / (0.012f * fs));
         reset();
     }
 
     void reset()
     {
         s1.reset(); s2.reset(); os.reset();
+        lowFader.snap(); highFader.snap(); cutHz = p.lowCutHz;
+        lowCut.reset(); lowPre.reset(); lowPost.reset(); highPre.reset(); highPost.reset();
+        retuneEq (true);
+        eqCountdown = 0;
         blockSum = 0.0; blockCount = 0;
         normDb = learned || activeBlocks >= 3 ? normTarget() : 0.0f;
         preDb = normDb + p.inputDb;
@@ -416,6 +431,10 @@ public:
         p = np;
         s1.set (p.comp1.model, p.comp1.amount, p.comp1.on, p.inputDb, p.autoMakeup);
         s2.set (p.comp2.model, p.comp2.amount, p.comp2.on, p.inputDb, p.autoMakeup);
+        lowFader.targetMode = std::min (kNumLowModes - 1, std::max (0, p.lowMode));
+        lowFader.targetAmount = std::min (1.0f, std::max (-1.0f, p.low));
+        highFader.targetMode = std::min (kNumHighModels - 1, std::max (0, p.highModel));
+        highFader.targetAmount = std::min (1.0f, std::max (-1.0f, p.high));
     }
 
     // ---- automatic input level
@@ -440,7 +459,9 @@ public:
         float g1 = 0.0f, g2 = 0.0f;
         for (int i = 0; i < n; ++i)
         {
+            if (--eqCountdown <= 0) { eqCountdown = kEqInterval; retuneEq (false); }
             float l = L[i], r = R[i];
+            lowCut.process (l, r);          // rumble is gone before the level is measured
             analyse (0.5f * (l * l + r * r));
 
             normDb += ((p.autoLevel ? normTarget() : 0.0f) - normDb) * cGain;
@@ -454,15 +475,13 @@ public:
             {
                 float l0, l1, r0, r1;
                 os.up (0, l, l0, l1); os.up (1, r, r0, r1);
-                s1.process (l0, r0); g1 = std::max (g1, s1.gainReductionDb());
-                s2.process (l0, r0); g2 = std::max (g2, s2.gainReductionDb());
-                s1.process (l1, r1); s2.process (l1, r1);
+                chain (l0, r0, g1, g2);
+                chain (l1, r1, g1, g2);
                 l = os.down (0, l0, l1); r = os.down (1, r0, r1);
             }
             else
             {
-                s1.process (l, r); g1 = std::max (g1, s1.gainReductionDb());
-                s2.process (l, r); g2 = std::max (g2, s2.gainReductionDb());
+                chain (l, r, g1, g2);
             }
 
             const float post = dbToGain (postDb);
@@ -472,6 +491,36 @@ public:
     }
 
 private:
+    inline void chain (float& l, float& r, float& g1, float& g2)
+    {
+        lowPre.process (l, r); highPre.process (l, r);
+        s1.process (l, r); g1 = std::max (g1, s1.gainReductionDb());
+        s2.process (l, r); g2 = std::max (g2, s2.gainReductionDb());
+        lowPost.process (l, r); highPost.process (l, r);
+    }
+
+    // Glides the EQ controls and retunes the filters (a few hundred times a second).
+    void retuneEq (bool force)
+    {
+        if (lowFader.advance (cEq) || force)
+        {
+            lowPre.set (fsStage, lowFader.mode, std::min (0.0f, lowFader.amount));
+            lowPost.set (fsStage, lowFader.mode, std::max (0.0f, lowFader.amount));
+        }
+        if (highFader.advance (cEq) || force)
+        {
+            highPre.set (fsStage, highFader.mode, std::min (0.0f, highFader.amount));
+            highPost.set (fsStage, highFader.mode, std::max (0.0f, highFader.amount));
+        }
+        const float target = std::min (kLowCutMaxHz, std::max (kLowCutOffHz, p.lowCutHz));
+        if (force || std::abs (target - cutHz) > 0.01f)
+        {
+            cutHz = force ? target : cutHz * std::pow (target / cutHz, cEq); // glide in pitch
+            if (std::abs (target - cutHz) < 0.05f) cutHz = target;
+            lowCut.set (fs, cutHz);
+        }
+    }
+
     float normTarget() const
     {
         if (learned) return learnedDb;
@@ -506,6 +555,11 @@ private:
     Params p;
     Stage s1, s2;
     Halfband2x os;
+    static constexpr int kEqInterval = 32;
+    LowCut lowCut; LowBand lowPre, lowPost; HighBand highPre, highPost;
+    EqFader lowFader, highFader;
+    float cutHz = kLowCutOffHz, fsStage = 96000.0f, cEq = 1.0f;
+    int eqCountdown = 0;
     bool oversample = true;
     float fs = 48000.0f;
     int blockLen = 4800, blockCount = 0, activeBlocks = 0;

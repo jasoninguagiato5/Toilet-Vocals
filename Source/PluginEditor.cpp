@@ -21,8 +21,8 @@ void FaderLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int, int widt
 }
 
 // ----------------------------------------------------------- model selector
-ModelSelector::ModelSelector (int stripIndex, juce::RangedAudioParameter& p)
-    : strip (stripIndex),
+ModelSelector::ModelSelector (int stripIndex, juce::RangedAudioParameter& p, std::function<juce::String (int)> describeRow)
+    : strip (stripIndex), describe (std::move (describeRow)),
       attach (p, [this] (float v) { selected = juce::roundToInt (v); repaint(); })
 {
     attach.sendInitialUpdate();
@@ -43,13 +43,47 @@ int ModelSelector::rowAt (int y) const
 
 void ModelSelector::mouseDown (const juce::MouseEvent& e) { attach.setValueAsCompleteGesture ((float) rowAt (e.y)); }
 
-juce::String ModelSelector::getTooltip() { return tvox::modelInfo (hoverRow).blurb; }
+// --------------------------------------------------------- toilet roll
+RollControl::RollControl (juce::RangedAudioParameter& p)
+    : param (p),
+      attach (p, [this] (float v)
+              {
+                  norm = param.convertTo0to1 (v);
+                  if (onText) onText (param.getText (norm, 16));
+                  repaint();
+              })
+{
+    setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+    attach.sendInitialUpdate();
+}
+
+void RollControl::paint (juce::Graphics& g)
+{
+    g.setOrigin (-getX(), -getY());
+    art::drawRoll (g, norm);
+}
+
+void RollControl::mouseDown (const juce::MouseEvent&) { dragStart = norm; attach.beginGesture(); }
+void RollControl::mouseDrag (const juce::MouseEvent& e)
+{
+    const float n = juce::jlimit (0.0f, 1.0f, dragStart + (float) e.getDistanceFromDragStartY() / 110.0f); // pull down = more cut
+    attach.setValueAsPartOfGesture (param.convertFrom0to1 (n));
+}
+void RollControl::mouseUp (const juce::MouseEvent&) { attach.endGesture(); }
+void RollControl::mouseDoubleClick (const juce::MouseEvent&) { attach.setValueAsCompleteGesture (param.convertFrom0to1 (param.getDefaultValue())); }
+void RollControl::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w)
+{
+    attach.setValueAsCompleteGesture (param.convertFrom0to1 (juce::jlimit (0.0f, 1.0f, norm - w.deltaY * 0.25f)));
+}
 
 // ------------------------------------------------------------------- editor
 ToiletVocalsEditor::ToiletVocalsEditor (ToiletVocalsProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
       comp1 (art::kComp1, *p.apvts.getParameter (PID::c1Model)),
-      comp2 (art::kComp2, *p.apvts.getParameter (PID::c2Model))
+      comp2 (art::kComp2, *p.apvts.getParameter (PID::c2Model)),
+      lowModes (art::kLow, *p.apvts.getParameter (PID::lowMode), [] (int row) { return juce::String (tvox::lowModeInfo (row).blurb); }),
+      highModels (art::kHigh, *p.apvts.getParameter (PID::highModel), [] (int row) { return juce::String (tvox::highModelInfo (row).blurb); }),
+      roll (*p.apvts.getParameter (PID::lowCut))
 {
     setLookAndFeel (&lnf);
     setOpaque (true);
@@ -66,6 +100,21 @@ ToiletVocalsEditor::ToiletVocalsEditor (ToiletVocalsProcessor& p)
     setupFader (amount1, PID::c1Amount, "Compressor 1: from its gentlest setting at the bottom to its most extreme at the top.");
     setupFader (amount2, PID::c2Amount, "Compressor 2: from its gentlest setting at the bottom to its most extreme at the top.");
     setupFader (output, PID::output, "Output level.");
+    setupFader (low, PID::low, "Low: up adds weight with a wide curve, down removes mud with a narrow one. Flat in the middle.");
+    setupFader (high, PID::high, "High: up brightens, down darkens, in the style of the selected EQ. Flat in the middle.");
+    addAndMakeVisible (lowModes);
+    addAndMakeVisible (highModels);
+
+    rollText.setFont (art::labelFont (17.0f));
+    rollText.setJustificationType (juce::Justification::centredLeft);
+    rollText.setInterceptsMouseClicks (false, false);
+    addAndMakeVisible (rollText);
+    roll.onText = [this] (const juce::String& t) { rollText.setText (t, juce::dontSendNotification); };
+    roll.setTooltip ("Low cut: drag the paper down to cut more rumble. Double-click to switch it off.");
+    addAndMakeVisible (roll);
+    if (auto* cut = proc.apvts.getParameter (PID::lowCut))
+        rollText.setText (cut->getCurrentValueAsText(), juce::dontSendNotification);
+
     setupComp (comp1, PID::c1On);
     setupComp (comp2, PID::c2On);
 
@@ -130,6 +179,12 @@ void ToiletVocalsEditor::resized()
     amount1.slider.setBounds (faderBounds (art::midX (art::kComp1)));
     amount2.slider.setBounds (faderBounds (art::midX (art::kComp2)));
     output.slider.setBounds (faderBounds (art::kOutputFaderX));
+    low.slider.setBounds (faderBounds (art::midX (art::kLow)));
+    high.slider.setBounds (faderBounds (art::midX (art::kHigh)));
+    lowModes.setBounds (art::modeArea (art::kLow).toNearestInt());
+    highModels.setBounds (art::modeArea (art::kHigh).toNearestInt());
+    roll.setBounds (art::kRollX, art::kRollY, art::kRollW, art::kRollH);
+    rollText.setBounds (art::kRollTextX, art::kRollTextY, 90, 20);
 
     Comp* comps[2] = { &comp1, &comp2 };
     const int strips[2] = { art::kComp1, art::kComp2 };
