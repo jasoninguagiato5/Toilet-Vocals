@@ -24,21 +24,21 @@ auto level -> INPUT fader -> COMP 1 -> COMP 2 -> OUTPUT fader
 
 | Model | Modelled on | Fader at bottom | Fader at top |
 |---|---|---|---|
-| **Plunger** | 1176-style FET | 4:1, 0-2 dB | all-buttons-in, about 18 dB, with grit |
-| **Float** | LA-2A-style tube opto | compress, 1-2 dB | limit, about 11 dB |
-| **Bidet** | CL 1B-style opto | 2:1, 1-2 dB | 10:1, about 11 dB, still the cleanest |
-| **Snake** | Distressor-style | 2:1, 1-2 dB | Nuke, about 18 dB, with even then odd harmonics |
+| **#1 76** | 1176-style FET | 4:1, 0-2 dB | all-buttons-in, about 18 dB, with grit |
+| **LA #2A** | LA-2A-style tube opto | compress, 1-2 dB | limit, about 11 dB |
+| **CL #1b** | CL 1B-style opto | 2:1, 1-2 dB | 10:1, about 11 dB, still the cleanest |
+| **IBSsor** | Distressor-style | 2:1, 1-2 dB | Nuke, about 18 dB, with even then odd harmonics |
 
 Makeup gain is automatic, so a fader changes how hard the stage works without changing the loudness (within about 1 dB).
 
 What each model takes from the published behaviour of its hardware:
 
-- **Plunger:** attack from 0.8 ms down to 0.05 ms, release that is quick after a lone peak and slower after sustained compression, an input stage that clips a little even with no compression, and at the top of the fader the all-buttons traits: a plateau-shaped curve, a lagging attack that lets transients through, and much more distortion.
-- **Float:** about 10 ms attack, a release that recovers half way in about 60 ms and then takes seconds, longer the harder and longer it has been working, and a detector that reacts more to high frequencies.
-- **Bidet:** quick attack and release at low ratios (its classic vocal use), moving to 1 ms / 50 ms at the top, with very low distortion throughout.
-- **Snake:** a knee about 30 dB long at 2:1 tightening to a brick wall at Nuke, distortion that rises as the times get faster, second harmonic that appears while it compresses over the upper third (Dist 2), and third harmonic at the very top (Dist 3).
+- **#1 76:** attack from 0.8 ms down to 0.05 ms, release that is quick after a lone peak and slower after sustained compression, an input stage that clips a little even with no compression, and at the top of the fader the all-buttons traits: a plateau-shaped curve, a lagging attack that lets transients through, and much more distortion.
+- **LA #2A:** about 10 ms attack, a release that recovers half way in about 60 ms and then takes seconds, longer the harder and longer it has been working, and a detector that reacts more to high frequencies.
+- **CL #1b:** quick attack and release at low ratios (its classic vocal use), moving to 1 ms / 50 ms at the top, with very low distortion throughout.
+- **IBSsor:** a knee about 30 dB long at 2:1 tightening to a brick wall at Nuke, distortion that rises as the times get faster, second harmonic that appears while it compresses over the upper third (Dist 2), and third harmonic at the very top (Dist 3).
 
-Plunger, Float and Bidet also saturate low frequencies first, the way transformer-coupled units do. The compressors run at twice the sample rate (below 88.2 kHz sessions) so the fast gain changes and harmonics don't alias; this adds 23 samples of latency, which the plugin reports to the host.
+The three transformer-coupled models (#1 76, LA #2A and CL #1b) also saturate low frequencies first. The compressors run at twice the sample rate (below 88.2 kHz sessions) so the fast gain changes and harmonics don't alias; this adds 23 samples of latency, which the plugin reports to the host.
 
 **Output.** Final level, -24 to +12 dB.
 

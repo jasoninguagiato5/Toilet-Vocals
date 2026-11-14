@@ -16,8 +16,8 @@ const Colour kPorcelain (0xffece6da), kPorcelainHi (0xfff8f4ec), kPorcelainLo (0
 const Strip kStrips[kNumMid] = {
     { "BASS",    { "SUB", "LOWER", "UPPER", "" },            3, false },
     { "TREBLE",  { "BITE", "TOP", "ROOF", "" },              3, false },
-    { "COMP 1",  { "PLUNGER", "FLOAT", "BIDET", "SNAKE" },   4, true },
-    { "COMP 2",  { "PLUNGER", "FLOAT", "BIDET", "SNAKE" },   4, true },
+    { "COMP 1",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },   4, true },
+    { "COMP 2",  { "#1 76", "LA #2A", "CL #1b", "IBSsor" },   4, true },
     { "REVERB",  { "TIGHT", "LARGE", "CHAMBER", "" },        3, false },
     { "DELAY",   { "SLAP", "EIGHT", "QUARTER", "" },         3, false },
     { "WIDTH",   { "WIDE", "STEREO", "SPREADER", "" },       3, false },

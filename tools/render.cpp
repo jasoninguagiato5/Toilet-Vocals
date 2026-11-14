@@ -274,9 +274,9 @@ static int cmdMeasure()
         for (float a : { 0.0f, 0.5f, 1.0f })
         {
             tvox::Params p; p.autoLevel = false; p.inputDb = in; p.comp1 = { 0, a, true }; p.comp2 = { 1, a, true };
-            std::printf ("  Plunger>Float  input %+3.0f  faders %.1f : %+5.2f dB\n", in, a, loudness (run (p, v, fs).out, fs) - ref);
+            std::printf ("  #1 76>LA #2A  input %+3.0f  faders %.1f : %+5.2f dB\n", in, a, loudness (run (p, v, fs).out, fs) - ref);
             p.comp1.model = 3; p.comp2.model = 2;
-            std::printf ("  Snake>Bidet    input %+3.0f  faders %.1f : %+5.2f dB\n", in, a, loudness (run (p, v, fs).out, fs) - ref);
+            std::printf ("  IBSsor>CL #1b    input %+3.0f  faders %.1f : %+5.2f dB\n", in, a, loudness (run (p, v, fs).out, fs) - ref);
         }
     std::printf ("\nauto level (track gain -> loudness into the compressors once learned):\n");
     for (float g : { -24.0f, -10.0f, 0.0f, 10.0f })

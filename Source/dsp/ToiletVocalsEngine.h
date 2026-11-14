@@ -6,10 +6,10 @@
 // Each compressor stage has four models and ONE fader ("amount"). The bottom of
 // the fader is that unit's gentlest usable setting, the top its most extreme:
 //
-//   Plunger  FET limiter, 1176 family.       4:1, 0-2 dB  ->  all-buttons, ~18 dB
-//   Float    tube optical leveler, LA-2A.    compress, 1-2 dB -> limit, ~11 dB
-//   Bidet    clean tube opto, CL 1B family.  2:1, 1-2 dB  ->  10:1, ~11 dB
-//   Snake    Distressor family.              2:1, 1-2 dB  ->  Nuke, ~18 dB
+//   #1 76  FET limiter, 1176 family.       4:1, 0-2 dB  ->  all-buttons, ~18 dB
+//   LA #2A    tube optical leveler, LA-2A.    compress, 1-2 dB -> limit, ~11 dB
+//   CL #1b    clean tube opto, CL 1B family.  2:1, 1-2 dB  ->  10:1, ~11 dB
+//   IBSsor    Distressor family.              2:1, 1-2 dB  ->  Nuke, ~18 dB
 //
 // Gain-reduction figures are for a vocal at the reference level (-18 dBFS gated
 // RMS), which is what the automatic input leveling delivers.
@@ -40,10 +40,10 @@ struct ModelInfo { const char* name; const char* blurb; };
 inline const ModelInfo& modelInfo (int i)
 {
     static const ModelInfo m[kNumModels] = {
-        { "Plunger", "FET. Fast and aggressive, with bite." },
-        { "Float",   "Tube opto. Slow, thick and smooth." },
-        { "Bidet",   "Clean opto. Glossy, modern pop." },
-        { "Snake",   "Firm control up to all-out grit." } };
+        { "#1 76", "FET. Fast and aggressive, with bite." },
+        { "LA #2A",   "Tube opto. Slow, thick and smooth." },
+        { "CL #1b",   "Clean opto. Glossy, modern pop." },
+        { "IBSsor",   "Firm control up to all-out grit." } };
     return m[std::min (kNumModels - 1, std::max (0, i))];
 }
 
@@ -93,7 +93,7 @@ inline Curve curveFor (int model, float a)
     switch (model)
     {
         default:
-        case 0: // Plunger: 4 -> 8 -> 12 -> 20 -> all buttons in
+        case 0: // #1 76: 4 -> 8 -> 12 -> 20 -> all buttons in
         {
             // Published: 20-800 us attack, 50 ms-1.1 s release, soft knee, all of it program
             // dependent. All-buttons sits between 12:1 and 20:1 but the curve turns into a
@@ -112,7 +112,7 @@ inline Curve curveFor (int model, float a)
             c.lfSat = 1.0f;
             break;
         }
-        case 1: // Float: compress (~3:1) -> limit
+        case 1: // LA #2A: compress (~3:1) -> limit
             // Published: ~10 ms average attack (frequency dependent); release reaches 50% in
             // ~60 ms, the rest takes 1-15 s and is slower after long or heavy compression.
             c.slope = lerp (slopeOf (3), slopeOf (14), smoothstep (0.0f, 1.0f, a));
@@ -130,7 +130,7 @@ inline Curve curveFor (int model, float a)
             c.lfSat = 1.0f;
             c.scTilt = 0.4f;
             break;
-        case 2: // Bidet: 2:1 -> 10:1, the cleanest of the four
+        case 2: // CL #1b: 2:1 -> 10:1, the cleanest of the four
             // Published: 2:1-10:1, 0.5-300 ms attack, 0.05-10 s release, fixed mode 1 ms / 50 ms,
             // 0.15% THD. Quick attack and release at low ratio is its classic vocal setting.
             c.slope = pts<3> ({ P { 0.0f, slopeOf (2) }, P { 0.5f, slopeOf (4) }, P { 1.0f, slopeOf (10) } }, a);
@@ -146,7 +146,7 @@ inline Curve curveFor (int model, float a)
             c.satEven = lerp (0.012f, 0.03f, a);
             c.lfSat = 0.6f;
             break;
-        case 3: // Snake: 2 -> 3 -> 4 -> 6 -> 10 -> 20 -> Nuke
+        case 3: // IBSsor: 2 -> 3 -> 4 -> 6 -> 10 -> 20 -> Nuke
             // Published: 50 us-30 ms attack, 50 ms-3.5 s release; 2:1 has a knee up to 30 dB
             // long, Nuke is a brick wall; distortion rises with faster times; Dist 2 is mostly
             // 2nd harmonic while compressing, Dist 3 adds 3rd and flattens peaks like tape.
@@ -321,8 +321,9 @@ public:
         double h[kTaps], total = 0.0;
         for (int n = 0; n < kTaps; ++n)
         {
-            const double m = n - (kTaps - 1) / 2, r = 2.0 * n / (kTaps - 1) - 1.0;
-            const double sinc = m == 0 ? 1.0 : std::sin (pi * m / 2.0) / (pi * m / 2.0);
+            const int mi = n - (kTaps - 1) / 2;
+            const double m = mi, r = 2.0 * n / (kTaps - 1) - 1.0;
+            const double sinc = mi == 0 ? 1.0 : std::sin (pi * m / 2.0) / (pi * m / 2.0);
             h[n] = 0.5 * sinc * bessel (beta * std::sqrt (1.0 - r * r)) / bessel (beta);
             total += h[n];
         }
